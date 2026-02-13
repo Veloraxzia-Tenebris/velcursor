@@ -1,33 +1,72 @@
 {
-  "name": "velcursor",
-  "displayName": "velCursor",
-  "description": "",
-  "version": "0.0.1",
-  "engines": {
-    "vscode": "^1.109.0"
-  },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [],
-  "main": "./extension.js",
-  "contributes": {
-    "commands": [{
-      "command": "velcursor.helloWorld",
-      "title": "Hello World"
-    }]
-  },
-  "scripts": {
-    "lint": "eslint .",
-    "pretest": "npm run lint",
-    "test": "vscode-test"
-  },
-  "devDependencies": {
-    "@types/vscode": "^1.109.0",
-    "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "eslint": "^9.39.2",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
-  }
+	"name": "velcursor",
+	"displayName": "velCursor",
+	"description": "",
+	"version": "0.0.1",
+	"engines": {
+		"vscode": "^1.109.0"
+	},
+	"categories": [
+		"Other"
+	],
+	"activationEvents": [
+		"onCommand:velcursor.activateInertia",
+		"onCommand:velcursor.deactivateInertia",
+		"onCommand:velcursor.activateTrail",
+		"onCommand:velcursor.deactivateTrail",
+		"onCommand:cursorOnce.up",
+		"onCommand:cursorOnce.down",
+		"onCommand:cursorOnce.left",
+		"onCommand:cursorOnce.right",
+		"onCommand:inertiaCursor.up",
+		"onCommand:inertiaCursor.down",
+		"onCommand:inertiaCursor.left",
+		"onCommand:inertiaCursor.right",
+		"onCommand:inertiaCursor.stop",
+		"onCommand:inertiaCursor.toggleSelectMode"
+	],
+	"contributes": {
+		"commands": [
+			{ "command": "velcursor.activateInertia", "title": "VelCursor: Activate Inertia" },
+			{ "command": "velcursor.deactivateInertia", "title": "VelCursor: Deactivate Inertia" },
+			{ "command": "velcursor.activateTrail", "title": "VelCursor: Activate Cursor Trail" },
+			{ "command": "velcursor.deactivateTrail", "title": "VelCursor: Deactivate Cursor Trail" },
+			{ "command": "cursorOnce.up", "title": "Cursor Once: Up" },
+			{ "command": "cursorOnce.down", "title": "Cursor Once: Down" },
+			{ "command": "cursorOnce.left", "title": "Cursor Once: Left" },
+			{ "command": "cursorOnce.right", "title": "Cursor Once: Right" },
+			{ "command": "inertiaCursor.up", "title": "Inertia Cursor: Up" },
+			{ "command": "inertiaCursor.down", "title": "Inertia Cursor: Down" },
+			{ "command": "inertiaCursor.left", "title": "Inertia Cursor: Left" },
+			{ "command": "inertiaCursor.right", "title": "Inertia Cursor: Right" },
+			{ "command": "inertiaCursor.stop", "title": "Inertia Cursor: Stop" },
+			{ "command": "inertiaCursor.toggleSelectMode", "title": "Inertia Cursor: Toggle Select Mode" }
+		],
+		"keybindings": [
+			{ "key": "alt+i", "command": "cursorOnce.up", "when": "editorTextFocus" },
+			{ "key": "alt+k", "command": "cursorOnce.down", "when": "editorTextFocus" },
+			{ "key": "alt+j", "command": "cursorOnce.left", "when": "editorTextFocus" },
+			{ "key": "alt+l", "command": "cursorOnce.right", "when": "editorTextFocus" },
+			{ "key": "ctrl+alt+i", "command": "inertiaCursor.up", "when": "editorTextFocus" },
+			{ "key": "ctrl+alt+k", "command": "inertiaCursor.down", "when": "editorTextFocus" },
+			{ "key": "ctrl+alt+j", "command": "inertiaCursor.left", "when": "editorTextFocus" },
+			{ "key": "ctrl+alt+l", "command": "inertiaCursor.right", "when": "editorTextFocus" },
+			{ "key": "escape", "command": "inertiaCursor.stop", "when": "editorTextFocus" },
+			{ "key": "alt+u", "command": "inertiaCursor.toggleSelectMode", "when": "editorTextFocus" }
+		]
+	},
+	"main": "./extension.js",
+	"scripts": {
+		"lint": "eslint .",
+		"pretest": "npm run lint",
+		"test": "vscode-test"
+	},
+	"devDependencies": {
+		"@types/vscode": "^1.109.0",
+		"@types/mocha": "^10.0.10",
+		"@types/node": "22.x",
+		"eslint": "^9.39.2",
+		"@vscode/test-cli": "^0.0.12",
+		"@vscode/test-electron": "^2.5.2"
+	}
 }

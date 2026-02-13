@@ -1,36 +1,53 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
-const vscode = require('vscode');
+// extension.js
+const vscode = require("vscode");
+const inertia = require('./cursorInertia');
+const trail = require('./cursorTrail');
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
-
-/**
- * @param {vscode.ExtensionContext} context
- */
 function activate(context) {
+	context.subscriptions.push(
+		vscode.commands.registerCommand("velcursor.activateInertia", () => {
+			const changed = inertia.activate?.();
+			const message = changed ? "Inertia controls activated." : "Inertia controls are already active.";
+			vscode.window.showInformationMessage(message);
+		}),
+		vscode.commands.registerCommand("velcursor.deactivateInertia", () => {
+			if (inertia.isActive?.()) {
+				inertia.deactivate?.();
+				vscode.window.showInformationMessage("Inertia controls deactivated.");
+				return;
+			}
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "velcursor" is now active!');
+			vscode.window.showInformationMessage("Inertia controls are already inactive.");
+		}),
+		vscode.commands.registerCommand("velcursor.activateTrail", () => {
+			const changed = trail.activate?.();
+			if (changed) {
+				vscode.window.showInformationMessage("Cursor trail activated.");
+				return;
+			}
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with  registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('velcursor.helloWorld', function () {
-		// The code you place here will be executed every time your command is executed
+			if (trail.isActive?.()) {
+				vscode.window.showInformationMessage("Cursor trail is already active.");
+			}
+		}),
+		vscode.commands.registerCommand("velcursor.deactivateTrail", () => {
+			if (trail.isActive?.()) {
+				trail.deactivate?.();
+				vscode.window.showInformationMessage("Cursor trail deactivated.");
+				return;
+			}
 
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from velCursor!');
-	});
+			vscode.window.showInformationMessage("Cursor trail is already inactive.");
+		})
+	);
 
-	context.subscriptions.push(disposable);
+	// Keep movement commands available by default on extension activation.
+	inertia.activate?.();
 }
 
-// This method is called when your extension is deactivated
-function deactivate() {}
-
-module.exports = {
-	activate,
-	deactivate
+function deactivate() {
+	trail.deactivate?.();
+	inertia.deactivate?.();
 }
+
+module.exports = { activate, deactivate };
