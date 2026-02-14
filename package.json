@@ -23,7 +23,9 @@
 		"onCommand:inertiaCursor.left",
 		"onCommand:inertiaCursor.right",
 		"onCommand:inertiaCursor.stop",
-		"onCommand:inertiaCursor.toggleSelectMode"
+		"onCommand:inertiaCursor.toggleSelectMode",
+		"onCommand:velcursor.setInertiaImpulseLevel",
+		"onCommand:velcursor.setInertiaTickSlowLevel"
 	],
 	"contributes": {
 		"commands": [
@@ -31,6 +33,8 @@
 			{ "command": "velcursor.deactivateInertia", "title": "VelCursor: Deactivate Inertia" },
 			{ "command": "velcursor.activateTrail", "title": "VelCursor: Activate Cursor Trail" },
 			{ "command": "velcursor.deactivateTrail", "title": "VelCursor: Deactivate Cursor Trail" },
+			{ "command": "velcursor.setInertiaImpulseLevel", "title": "VelCursor: Set Inertia Impulse Level" },
+			{ "command": "velcursor.setInertiaTickSlowLevel", "title": "VelCursor: Set Inertia Tick Slowness Level" },
 			{ "command": "cursorOnce.up", "title": "Cursor Once: Up" },
 			{ "command": "cursorOnce.down", "title": "Cursor Once: Down" },
 			{ "command": "cursorOnce.left", "title": "Cursor Once: Left" },
@@ -53,7 +57,26 @@
 			{ "key": "ctrl+alt+l", "command": "inertiaCursor.right", "when": "editorTextFocus" },
 			{ "key": "escape", "command": "inertiaCursor.stop", "when": "editorTextFocus" },
 			{ "key": "alt+u", "command": "inertiaCursor.toggleSelectMode", "when": "editorTextFocus" }
-		]
+		],
+		"configuration": {
+			"title": "VelCursor",
+			"properties": {
+				"velcursor.inertiaImpulseLevel": {
+					"type": "integer",
+					"default": 4,
+					"minimum": 1,
+					"maximum": 10,
+					"description": "Impulse strength level for inertial cursor movement (1-10). Higher values add more velocity per repeated inertia key press."
+				},
+				"velcursor.inertiaTickSlowLevel": {
+					"type": "integer",
+					"default": 4,
+					"minimum": 1,
+					"maximum": 10,
+					"description": "Tick slowness level for inertial cursor updates (1-10). Higher values increase milliseconds per tick and make updates slower."
+				}
+			}
+		}
 	},
 	"main": "./extension.js",
 	"scripts": {
