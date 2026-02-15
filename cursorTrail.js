@@ -1,5 +1,4 @@
-/* global window, document, requestAnimationFrame */
-// neovide-cursor.js
+// vel-cursor.js
 //
 // Core architecture, rendering order, and physics
 //
@@ -11,9 +10,9 @@
 // Corners are ranked by alignment with the movement direction. Leading corners respond faster.
 // Trailing corners lag more. This yields stretch then snap-back behavior.
 //
-// 3) Dense interpolated polygon ribbon trail
+// 3) Dense interpolated polygon hex trail
 // Trail samples are inserted with interpolation between sparse motion samples, then rendered as
-// swept filled polygon quads with TTL fade for smooth continuity.
+// swept filled directional hex cells with TTL fade for smooth continuity.
 //
 // 4) Trail-only motion + persistent hollow caret box
 // During motion, only the ribbon trail is rendered.
@@ -73,45 +72,7 @@
 // ASCII overshoot signal flow:
 //      cursor motion ---> kick ---> v ----> oscillator ----> x ----> size scale
 
-const vscode = require("vscode");
-
-let trailActive = false;
-
-function hasRendererDom() {
-	return typeof window !== "undefined" && typeof document !== "undefined";
-}
-
-function activate() {
-	if (trailActive) return false;
-
-	if (!hasRendererDom()) {
-		vscode.window.showWarningMessage("Cursor trail can only run in the editor renderer process.");
-		return false;
-	}
-
-	installTrailInDom();
-	trailActive = true;
-	vscode.window.setStatusBarMessage("Cursor trail activated.", 1500);
-	return true;
-}
-
-function deactivate() {
-	if (!trailActive) return false;
-
-	if (hasRendererDom() && typeof window.__neovideCursorCleanup === "function") {
-		window.__neovideCursorCleanup();
-	}
-
-	trailActive = false;
-	vscode.window.setStatusBarMessage("Cursor trail deactivated.", 1500);
-	return true;
-}
-
-function isActive() {
-	return trailActive;
-}
-
-function installTrailInDom() {
+(() => {
 	"use strict";
 
 	// ======================================================================
@@ -232,7 +193,7 @@ function installTrailInDom() {
 			// Range: >= 0.
 			// +: Suppresses trail for more short caret hops (e.g., normal typing).
 			// -: Allows trail on shorter caret hops.
-			minMoveCharsForTrail: 1.5,
+			minMoveCharsForTrail: 0.0,
 			// Units: px.
 			// Range: >= 0.
 			// +: Suppresses tiny corner-shape changes more aggressively.
@@ -247,32 +208,32 @@ function installTrailInDom() {
 			// Range: > 0.
 			// +: Reduces adaptive insertion density (less smoothing, faster).
 			// -: Increases adaptive insertion density (smoother, heavier).
-			adaptiveInterpStepPx: 0.32,
+			adaptiveInterpStepPx: 0.12,
 			// Units: count (samples per push).
 			// Range: integer >= 1.
 			// +: Allows denser gap filling for large motion jumps.
 			// -: Hard-limits insertion more aggressively for performance.
-			maxInterpPerPush: 4,
+			maxInterpPerPush: 10,
 			// Units: px.
 			// Range: > 0.
 			// +: Fewer draw-time subdivisions across long spans.
 			// -: More draw-time subdivisions for smoother ribbons.
-			drawSubdivideStepPx: 0.72,
+			drawSubdivideStepPx: 0.24,
 			// Units: count (subdivisions per pair).
 			// Range: integer >= 1.
 			// +: Allows more geometric refinement (smoother, heavier).
 			// -: Caps refinement earlier (faster, potentially rougher).
-			maxDrawSubdivisions: 6,
+			maxDrawSubdivisions: 16,
 			// Units: count (polygon sides).
 			// Range: integer >= 3.
 			// +: Smoother, rounder ribbon cells that better conform to the trail.
 			// -: Fewer sides reduce draw cost but increase faceting.
-			ribbonSides: 4,
+			ribbonSides: 6,
 			// Units: count (polygon sides).
 			// Range: integer >= 3.
 			// +: Preserves more contour detail at low quality.
 			// -: Drops detail further to save more resources under pressure.
-			ribbonSidesMin: 4,
+			ribbonSidesMin: 6,
 			// Units: Boolean flag.
 			// Range: true | false.
 			// +: true enforces corner correspondence to reduce twist artifacts.
@@ -303,23 +264,23 @@ function installTrailInDom() {
 				// Units: Boolean flag.
 				// Range: true | false.
 				// +: true enables stacked concave-hex trail cell rendering.
-				// -: false keeps the simple ribbon trail renderer.
-				enabled: false,
+				// -: false disables stacked hex trail cell rendering.
+				enabled: true,
 				// Units: unitless fraction.
 				// Range: [0, 1].
 				// +: Shares more of each side edge with the next cell.
 				// -: Shares less and makes cells more distinct.
-				partialEdgeShare: 0.35,
+				partialEdgeShare: 0.82,
 				// Units: unitless fraction of local cell width.
 				// Range: >= 0.
 				// +: Stronger concave pull near the base edge.
 				// -: Flatter, less concave cell profile.
-				concavityDepth: 0.18,
+				concavityDepth: 0.0,
 				// Units: count (cells).
 				// Range: integer >= 0.
-				// +: More head cells switch to real quads near the caret.
-				// -: Fewer head cells use real quads.
-				headQuadCells: 2,
+				// +: More head cells get extra geometric detail pressure near the caret.
+				// -: Fewer head cells get near-caret detail pressure.
+				headQuadCells: 0,
 				// Units: keyword.
 				// Range: "forward" | "backward".
 				// +: "forward" points concavity toward motion.
@@ -335,16 +296,26 @@ function installTrailInDom() {
 				// +: Higher value tolerates slightly looser overlap checks.
 				// -: Lower value enforces stricter non-overlap behavior.
 				overlapEpsilonPx: 0.25,
+				// Units: Boolean flag.
+				// Range: true | false.
+				// +: true rejects cells overlapping recent history.
+				// -: false prioritizes continuity and avoids overlap-based cell drops.
+				overlapGuardEnabled: false,
 				// Units: px.
 				// Range: > 0.
 				// +: Higher value avoids very thin/degenerate cell widths.
 				// -: Lower value allows thinner cells.
 				minCellWidthPx: 0.8,
+				// Units: count (cells).
+				// Range: integer >= 2.
+				// +: Checks overlap against more history; safer but can cull valid cells.
+				// -: Checks fewer recent cells; smoother continuity with slightly more risk.
+				overlapLookbackCells: 3,
 				// Units: count (cells per frame).
 				// Range: integer >= 1.
 				// +: More cells for finer geometric detail.
 				// -: Fewer cells for lower render cost.
-				maxCellsPerFrame: 48,
+				maxCellsPerFrame: 144,
 
 				// Dynamic size controller for smoothness/detail demand.
 				// Units: Boolean flag.
@@ -356,17 +327,17 @@ function installTrailInDom() {
 				// Range: > 0.
 				// +: Larger nominal along-motion cell length.
 				// -: Shorter nominal along-motion cell length.
-				baseLenPx: 11,
+				baseLenPx: 8,
 				// Units: px.
 				// Range: > 0.
 				// +: Higher floor prevents very short cells in high-detail regions.
 				// -: Lower floor allows denser/smaller cells.
-				minLenPx: 4,
+				minLenPx: 3,
 				// Units: px.
 				// Range: >= minLenPx.
 				// +: Larger cap allows coarser cells in low-detail regions.
 				// -: Smaller cap limits coarse stretching.
-				maxLenPx: 22,
+				maxLenPx: 14,
 				// Units: unitless width scale.
 				// Range: > 0.
 				// +: Larger floor keeps cells thicker at high detail.
@@ -411,12 +382,22 @@ function installTrailInDom() {
 				// Range: [0, 1].
 				// +: Higher value reacts faster to target length changes.
 				// -: Lower value smooths length transitions more.
-				sizeLerpAlpha: 0.35,
+				sizeLerpAlpha: 0.12,
 				// Units: unitless alpha.
 				// Range: [0, 1].
 				// +: Higher value reacts faster to width-scale changes.
 				// -: Lower value smooths width transitions more.
-				widthLerpAlpha: 0.3,
+				widthLerpAlpha: 0.1,
+				// Units: unitless alpha.
+				// Range: [0, 1].
+				// +: Higher value tracks per-cell direction changes more tightly.
+				// -: Lower value dampens direction jitter and smooths turns.
+				directionLerpAlpha: 0.3,
+				// Units: unitless alpha.
+				// Range: [0, 1].
+				// +: Higher value tracks target section endpoints more tightly.
+				// -: Lower value smooths endpoint transitions more aggressively.
+				handoffLerpAlpha: 0.45,
 				// Units: degrees.
 				// Range: >= 0.
 				// +: Higher tolerance allows more perpendicularity slack.
@@ -930,7 +911,7 @@ function installTrailInDom() {
 	}
 
 	function ensureNativeCaretLayerStyle() {
-		const id = "__neovide_cursor_native_caret_layer__";
+		const id = "__vel_cursor_native_caret_layer__";
 		let tag = document.getElementById(id);
 		if (!tag) {
 			tag = document.createElement("style");
@@ -949,7 +930,7 @@ function installTrailInDom() {
 	// ======================================================================
 
 	function makeCanvas() {
-		const id = "__neovide_cursor_canvas__";
+		const id = "__vel_cursor_canvas__";
 		let canvas = document.getElementById(id);
 
 		if (!canvas) {
@@ -1780,20 +1761,6 @@ function installTrailInDom() {
 				widthScale: 1
 			}
 		};
-		const drawRibbonPairLegacy = (ctx, aPts, bPts, ox, oy) => {
-			const n = Math.min(aPts?.length ?? 0, bPts?.length ?? 0);
-			if (n < 3) return;
-			for (let e = 0; e < n; e++) {
-				const en = (e + 1) % n;
-				ctx.beginPath();
-				ctx.moveTo(aPts[e].x - ox, aPts[e].y - oy);
-				ctx.lineTo(aPts[en].x - ox, aPts[en].y - oy);
-				ctx.lineTo(bPts[en].x - ox, bPts[en].y - oy);
-				ctx.lineTo(bPts[e].x - ox, bPts[e].y - oy);
-				ctx.closePath();
-				ctx.fill();
-			}
-		};
 		const clonePoint = (p) => ({ x: p.x, y: p.y });
 		const buildTrailSections = (
 			sections,
@@ -1893,7 +1860,8 @@ function installTrailInDom() {
 			effectiveMaxRects,
 			effectiveDrawSubdivideStep,
 			effectiveMaxDrawSubdivisions,
-			effectiveRibbonSides
+			effectiveRibbonSides,
+			headRect
 		) => {
 			const cfg = CFG.trail.stackHex;
 			if (!cfg?.enabled) return false;
@@ -1914,17 +1882,99 @@ function installTrailInDom() {
 				effectiveRibbonSides,
 				remainingSubBudget
 			);
+			if (sections.length < 1 && trail.length) {
+				const newest = trail[trail.length - 1];
+				if (newest && newest.pts.length >= 3) {
+					const newestFrac = clamp((now - newest.t) / ttl, 0, 1);
+					const newestScale = Math.max(0.05, (1 + scaleExtra) * TRAIL_WIDTH_ENVELOPE_AT(newestFrac));
+					const newestPtsRaw = scalePolygonInto(
+						drawScratch.newestPts,
+						newest.pts,
+						newest.cx,
+						newest.cy,
+						newestScale
+					);
+					const newestPts = resamplePolygonInto(
+						drawScratch.newestResampled,
+						newestPtsRaw,
+						effectiveRibbonSides,
+						drawScratch.edgeLensA
+					);
+					const newestCenter = polygonCenter(newestPts);
+					sections.push({ pts: clonePolygon(newestPts), cx: newestCenter.x, cy: newestCenter.y, frac: newestFrac });
+				}
+			}
+
+			let headPts = null;
+			if (headRect) {
+				const pad = Math.max(0, CFG.rect.padPx || 0);
+				const headPoly = [
+					{ x: headRect.left - pad, y: headRect.top - pad },
+					{ x: headRect.left + headRect.width + pad, y: headRect.top - pad },
+					{ x: headRect.left + headRect.width + pad, y: headRect.top + headRect.height + pad },
+					{ x: headRect.left - pad, y: headRect.top + headRect.height + pad }
+				];
+				headPts = resamplePolygonInto(
+					drawScratch.newestResampled,
+					headPoly,
+					effectiveRibbonSides,
+					drawScratch.edgeLensA
+				);
+				if (sections.length > 0 && sections[sections.length - 1].pts.length === headPts.length) {
+					headPts = canonicalizePolygon(headPts, sections[sections.length - 1].pts);
+				} else {
+					headPts = canonicalizePolygon(headPts);
+				}
+				if (sections.length > 0) {
+					const lastSection = sections[sections.length - 1];
+					let bridgePts = lerpPolygon(lastSection.pts, headPts, 0.6);
+					bridgePts = canonicalizePolygon(bridgePts, lastSection.pts);
+					if (isValidTrailPolygon(bridgePts)) {
+						const bridgeCenter = polygonCenter(bridgePts);
+						sections.push({ pts: bridgePts, cx: bridgeCenter.x, cy: bridgeCenter.y, frac: 0 });
+					}
+				}
+				if (isValidTrailPolygon(headPts)) {
+					const headCenter = polygonCenter(headPts);
+					sections.push({ pts: clonePolygon(headPts), cx: headCenter.x, cy: headCenter.y, frac: 0 });
+				}
+			}
+
 			if (sections.length < 2) {
 				drawScratch.stackSizeState.valid = false;
+				if (headPts && isValidTrailPolygon(headPts)) {
+					const alphaHeadOnly = clamp(trailOpacity, CFG.trail.minAlpha, 1);
+					if (alphaHeadOnly > 0) {
+						ctx.globalAlpha = alphaHeadOnly;
+						ctx.beginPath();
+						ctx.moveTo(headPts[0].x - ox, headPts[0].y - oy);
+						for (let i = 1; i < headPts.length; i++) ctx.lineTo(headPts[i].x - ox, headPts[i].y - oy);
+						ctx.closePath();
+						ctx.fill();
+						return true;
+					}
+				}
 				return false;
 			}
 
 			const maxCells = Math.max(1, Math.round(Math.max(1, cfg.maxCellsPerFrame || 1) * clampedQuality));
-			const available = sections.length - 1;
-			const stride = Math.max(1, Math.ceil(available / maxCells));
+			const pickCount = Math.min(sections.length, maxCells + 1);
 			const picked = [0];
-			for (let i = stride; i < sections.length - 1; i += stride) picked.push(i);
+			if (pickCount > 2) {
+				for (let pi = 1; pi < pickCount - 1; pi++) {
+					const t = pi / (pickCount - 1);
+					const idx = Math.round(t * (sections.length - 1));
+					if (idx > picked[picked.length - 1] && idx < sections.length - 1) {
+						picked.push(idx);
+					}
+				}
+			}
 			if (picked[picked.length - 1] !== sections.length - 1) picked.push(sections.length - 1);
+			const tailKeepFrom = Math.max(0, sections.length - 3);
+			for (let i = tailKeepFrom; i < sections.length; i++) {
+				if (!picked.includes(i)) picked.push(i);
+			}
+			picked.sort((a, b) => a - b);
 			if (picked.length < 2) {
 				drawScratch.stackSizeState.valid = false;
 				return false;
@@ -1966,9 +2016,11 @@ function installTrailInDom() {
 				if (perpDeviationDeg > Math.max(0, cfg.perpToleranceDeg || 0)) {
 					D = pointDot(dA, rawD) >= pointDot(dB, rawD) ? dA : dB;
 				}
+				const dirBlend = clamp(cfg.directionLerpAlpha ?? 1, 0.05, 1);
+				D = pointNormalize(lerpPoint(prevD, D, dirBlend));
+				if (pointLen(D) < 1e-6) D = prevD;
 				const N = baseDir;
 				const baseMid = pointMid(baseL, baseR);
-				const baseWidth = Math.max(cfg.minCellWidthPx, pointLen(baseVec));
 
 				const curvature = angleBetweenDirs(prevD, D);
 				const curvPressure = clamp(curvature / Math.max(1e-4, cfg.curvatureNormRad), 0, 1);
@@ -2006,36 +2058,50 @@ function installTrailInDom() {
 					Math.max(cfg.minWidthScale, cfg.maxWidthScale * 1.2)
 				);
 
-				const handoffCenter = pointAdd(baseMid, pointScale(D, smoothLen));
-				const handoffWidth = Math.max(cfg.minCellWidthPx, baseWidth * smoothWidth);
+				const sectionFrame = computeSectionFrame(s1, D, cfg.minCellWidthPx);
+				const sectionWidth = Math.max(cfg.minCellWidthPx, sectionFrame.w);
+				const handoffCenter = clonePoint(sectionFrame.c);
+				const handoffWidth = clamp(
+					sectionWidth * smoothWidth,
+					cfg.minCellWidthPx,
+					sectionWidth * Math.max(1, cfg.maxWidthScale || 1)
+				);
 				const halfW = handoffWidth * 0.5;
-				const handoffL = pointAdd(handoffCenter, pointScale(N, -halfW));
-				const handoffR = pointAdd(handoffCenter, pointScale(N, halfW));
+				const handoffBlend = clamp(cfg.handoffLerpAlpha ?? 1, 0.05, 1);
+				const handoffLTarget = pointAdd(handoffCenter, pointScale(N, -halfW));
+				const handoffRTarget = pointAdd(handoffCenter, pointScale(N, halfW));
+				const handoffL = lerpPoint(baseL, handoffLTarget, handoffBlend);
+				const handoffR = lerpPoint(baseR, handoffRTarget, handoffBlend);
 				let partR = lerpPoint(baseR, handoffR, clamp(cfg.partialEdgeShare, 0, 1));
 				let partL = lerpPoint(baseL, handoffL, clamp(cfg.partialEdgeShare, 0, 1));
 				const concavitySign = cfg.concavityDirection === "backward" ? -1 : 1;
-				const concavityTarget = pointAdd(baseMid, pointScale(D, concavitySign * smoothLen * cfg.concavityDepth));
-				const concavityStep = Math.max(0, cfg.concavityDepth) * handoffWidth;
-				partR = clampPointStep(partR, concavityTarget, concavityStep);
-				partL = clampPointStep(partL, concavityTarget, concavityStep);
+				const concavityDepth = Math.max(0, cfg.concavityDepth || 0);
+				const concavityTarget = pointAdd(baseMid, pointScale(D, concavitySign * smoothLen * concavityDepth));
+				// Zero concavity means no deformation; clamping with step=0 would collapse both points.
+				if (concavityDepth > 1e-6) {
+					const concavityStep = concavityDepth * handoffWidth;
+					partR = clampPointStep(partR, concavityTarget, concavityStep);
+					partL = clampPointStep(partL, concavityTarget, concavityStep);
+				}
 
-				const headQuad = cellIndexFromHead < Math.max(0, cfg.headQuadCells || 0);
-				const quadCell = [clonePoint(baseL), clonePoint(baseR), clonePoint(handoffR), clonePoint(handoffL)];
-				let cellPts = headQuad
-					? quadCell
-					: [clonePoint(baseL), clonePoint(baseR), clonePoint(partR), clonePoint(handoffR), clonePoint(handoffL), clonePoint(partL)];
+				const cellPts = [
+					clonePoint(baseL),
+					clonePoint(baseR),
+					clonePoint(partR),
+					clonePoint(handoffR),
+					clonePoint(handoffL),
+					clonePoint(partL)
+				];
 				let valid = isValidTrailPolygon(cellPts);
-				if (valid && renderedCells.length > 1) {
-					for (let j = 0; j < renderedCells.length - 1; j++) {
+				if (valid && cfg.overlapGuardEnabled && renderedCells.length > 1) {
+					const lookback = Math.max(2, Math.round(cfg.overlapLookbackCells || 2));
+					const startIdx = Math.max(0, renderedCells.length - lookback);
+					for (let j = startIdx; j < renderedCells.length - 1; j++) {
 						if (polygonsOverlap(cellPts, renderedCells[j], cfg.overlapEpsilonPx || 0)) {
 							valid = false;
 							break;
 						}
 					}
-				}
-				if (!valid && !headQuad) {
-					cellPts = quadCell;
-					valid = isValidTrailPolygon(cellPts);
 				}
 
 				const alphaCell = clamp((1 - s1.frac) * trailOpacity, CFG.trail.minAlpha, 1);
@@ -2056,6 +2122,19 @@ function installTrailInDom() {
 				baseL = clonePoint(handoffL);
 				baseR = clonePoint(handoffR);
 				prevD = D;
+			}
+
+			if (headPts && isValidTrailPolygon(headPts)) {
+				const alphaHead = clamp(trailOpacity, CFG.trail.minAlpha, 1);
+				if (alphaHead > 0) {
+					ctx.globalAlpha = alphaHead;
+					ctx.beginPath();
+					ctx.moveTo(headPts[0].x - ox, headPts[0].y - oy);
+					for (let i = 1; i < headPts.length; i++) ctx.lineTo(headPts[i].x - ox, headPts[i].y - oy);
+					ctx.closePath();
+					ctx.fill();
+					drewAny = true;
+				}
 			}
 
 			if (drewAny) {
@@ -2111,99 +2190,23 @@ function installTrailInDom() {
 				ctx.shadowBlur = 0;
 			}
 
-				const now = wallNowMs ?? Date.now();
-				const ttl = CFG.trail.ttlMs;
-				const minPolyScale = 0.05;
-				const drewStacked = drawStackedHexTrail(
-					ctx,
-					ox,
-					oy,
-					now,
-					ttl,
-					scaleExtra,
-					trailOpacity,
-					clampedQuality,
-					effectiveMaxRects,
-					effectiveDrawSubdivideStep,
-					effectiveMaxDrawSubdivisions,
-					effectiveRibbonSides
-				);
-
-				if (!drewStacked) {
-					const trailStartIndex = Math.max(1, trail.length - effectiveMaxRects + 1);
-					// Draw newest pairs first for a stable head and natural fading tail.
-					for (let i = trail.length - 1; i >= trailStartIndex; i--) {
-						const prev = trail[i - 1];
-						const curr = trail[i];
-						if (!prev || !curr || prev.pts.length < 3 || curr.pts.length < 3) continue;
-
-						const prevFrac = clamp((now - prev.t) / ttl, 0, 1);
-						const currFrac = clamp((now - curr.t) / ttl, 0, 1);
-						const prevScale = Math.max(minPolyScale, (1 + scaleExtra) * TRAIL_WIDTH_ENVELOPE_AT(prevFrac));
-						const currScale = Math.max(minPolyScale, (1 + scaleExtra) * TRAIL_WIDTH_ENVELOPE_AT(currFrac));
-						const prevPtsRaw = scalePolygonInto(drawScratch.prevPts, prev.pts, prev.cx, prev.cy, prevScale);
-						const currPtsRaw = scalePolygonInto(drawScratch.currPts, curr.pts, curr.cx, curr.cy, currScale);
-						const prevPts = resamplePolygonInto(
-							drawScratch.prevResampled,
-							prevPtsRaw,
-							effectiveRibbonSides,
-							drawScratch.edgeLensA
-						);
-						const currPts = resamplePolygonInto(
-							drawScratch.currResampled,
-							currPtsRaw,
-							effectiveRibbonSides,
-							drawScratch.edgeLensB
-						);
-
-						const baseN = Math.min(prevPts.length, currPts.length);
-						if (baseN < 3) continue;
-
-						const pairSpan = maxCornerDelta(prevPts, currPts);
-						const subdivStep = Math.max(1e-4, effectiveDrawSubdivideStep);
-						const desiredSub = Math.min(
-							effectiveMaxDrawSubdivisions,
-							Math.max(1, Math.ceil(pairSpan / subdivStep))
-						);
-						const sub = desiredSub;
-
-						for (let k = 0; k < sub; k++) {
-							const ta = k / sub;
-							const tb = (k + 1) / sub;
-							const aPts = lerpPolygonInto(drawScratch.aPts, prevPts, currPts, ta);
-							const bPts = lerpPolygonInto(drawScratch.bPts, prevPts, currPts, tb);
-							const n = Math.min(aPts.length, bPts.length);
-							if (n < 3) continue;
-
-							const fracSub = lerp(prevFrac, currFrac, (ta + tb) * 0.5);
-							const alphaSub = clamp((1 - fracSub) * trailOpacity, CFG.trail.minAlpha, 1);
-							if (alphaSub <= 0) continue;
-
-							ctx.globalAlpha = alphaSub;
-							drawRibbonPairLegacy(ctx, aPts, bPts, ox, oy);
-						}
-					}
-
-					const newest = trail.length ? trail[trail.length - 1] : null;
-					if (newest && newest.pts.length >= 3) {
-						const fracCap = clamp((now - newest.t) / ttl, 0, 1);
-						const alphaCap = clamp((1 - fracCap) * trailOpacity, CFG.trail.minAlpha, 1);
-						const polyScale = Math.max(minPolyScale, (1 + scaleExtra) * TRAIL_WIDTH_ENVELOPE_AT(fracCap));
-						const newestPtsRaw = scalePolygonInto(drawScratch.newestPts, newest.pts, newest.cx, newest.cy, polyScale);
-						const pts = resamplePolygonInto(
-							drawScratch.newestResampled,
-							newestPtsRaw,
-							effectiveRibbonSides,
-							drawScratch.edgeLensA
-						);
-						ctx.globalAlpha = alphaCap;
-						ctx.beginPath();
-						ctx.moveTo(pts[0].x - ox, pts[0].y - oy);
-						for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x - ox, pts[i].y - oy);
-						ctx.closePath();
-						ctx.fill();
-					}
-				}
+			const now = wallNowMs ?? Date.now();
+			const ttl = CFG.trail.ttlMs;
+			drawStackedHexTrail(
+				ctx,
+				ox,
+				oy,
+				now,
+				ttl,
+				scaleExtra,
+				trailOpacity,
+				clampedQuality,
+				effectiveMaxRects,
+				effectiveDrawSubdivideStep,
+				effectiveMaxDrawSubdivisions,
+				effectiveRibbonSides,
+				boxRect
+			);
 
 			if (boxRect) {
 				ctx.globalAlpha = boxOpacity;
@@ -2235,7 +2238,7 @@ function installTrailInDom() {
 	// SECTION 11: Main loop
 	// ======================================================================
 
-	const flag = "__neovide_cursor_active__";
+	const flag = "__vel_cursor_active__";
 	if (window[flag]) return;
 	window[flag] = true;
 
@@ -2448,18 +2451,12 @@ function installTrailInDom() {
 	setCanvasVisible(false);
 	requestAnimationFrame(rafLoop);
 
-	window.__neovideCursorCleanup = () => {
+	window.__velCursorCleanup = () => {
 		window[flag] = false;
 		trail.length = 0;
 		lastPushed = null;
 		if (canvas && canvas.parentElement) canvas.parentElement.removeChild(canvas);
-		const style = document.getElementById("__neovide_cursor_native_caret_layer__");
+		const style = document.getElementById("__vel_cursor_native_caret_layer__");
 		if (style && style.parentElement) style.parentElement.removeChild(style);
 	};
-}
-
-module.exports = {
-	activate,
-	deactivate,
-	isActive
-};
+})();

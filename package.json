@@ -12,8 +12,6 @@
 	"activationEvents": [
 		"onCommand:velcursor.activateInertia",
 		"onCommand:velcursor.deactivateInertia",
-		"onCommand:velcursor.activateTrail",
-		"onCommand:velcursor.deactivateTrail",
 		"onCommand:cursorOnce.up",
 		"onCommand:cursorOnce.down",
 		"onCommand:cursorOnce.left",
@@ -31,8 +29,6 @@
 		"commands": [
 			{ "command": "velcursor.activateInertia", "title": "VelCursor: Activate Inertia" },
 			{ "command": "velcursor.deactivateInertia", "title": "VelCursor: Deactivate Inertia" },
-			{ "command": "velcursor.activateTrail", "title": "VelCursor: Activate Cursor Trail" },
-			{ "command": "velcursor.deactivateTrail", "title": "VelCursor: Deactivate Cursor Trail" },
 			{ "command": "velcursor.setInertiaImpulseLevel", "title": "VelCursor: Set Inertia Impulse Level" },
 			{ "command": "velcursor.setInertiaTickSlowLevel", "title": "VelCursor: Set Inertia Tick Slowness Level" },
 			{ "command": "cursorOnce.up", "title": "Cursor Once: Up" },

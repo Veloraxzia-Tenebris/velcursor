@@ -1,7 +1,6 @@
 // extension.js
 const vscode = require("vscode");
 const inertia = require('./cursorInertia');
-const trail = require('./cursorTrail');
 
 const CONFIG_SECTION = "velcursor";
 const IMPULSE_LEVEL_KEY = "inertiaImpulseLevel";
@@ -51,26 +50,6 @@ function activate(context) {
 			}
 
 			vscode.window.showInformationMessage("Inertia controls are already inactive.");
-		}),
-		vscode.commands.registerCommand("velcursor.activateTrail", () => {
-			const changed = trail.activate?.();
-			if (changed) {
-				vscode.window.showInformationMessage("Cursor trail activated.");
-				return;
-			}
-
-			if (trail.isActive?.()) {
-				vscode.window.showInformationMessage("Cursor trail is already active.");
-			}
-		}),
-		vscode.commands.registerCommand("velcursor.deactivateTrail", () => {
-			if (trail.isActive?.()) {
-				trail.deactivate?.();
-				vscode.window.showInformationMessage("Cursor trail deactivated.");
-				return;
-			}
-
-			vscode.window.showInformationMessage("Cursor trail is already inactive.");
 		}),
 		vscode.commands.registerCommand("velcursor.setInertiaImpulseLevel", async () => {
 			const current = inertia.getCurrentTuning?.();
@@ -122,7 +101,6 @@ function activate(context) {
 }
 
 function deactivate() {
-	trail.deactivate?.();
 	inertia.deactivate?.();
 }
 
