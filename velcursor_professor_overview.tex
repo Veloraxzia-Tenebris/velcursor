@@ -1,0 +1,572 @@
+\documentclass[journal]{IEEEtran}
+
+% ============================================================
+% Packages
+% ============================================================
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{hyperref}
+
+\sisetup{
+	per-mode = symbol,
+	inter-unit-product = \ensuremath{{}\cdot{}},
+	exponent-product = \ensuremath{{}\cdot{}}
+}
+
+% ============================================================
+% Theorem Environments
+% ============================================================
+\newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+
+% ============================================================
+% Title
+% ============================================================
+\title{velCursor: A Coupled Inertial Input and Hex-Cell Caret-Trail Rendering System for VS Code\\
+\large A Code-Faithful Hybrid Systems Treatment with Stability, Validity, and Numerical Guarantees}
+\author{velCursor Project Technical Note (Expanded, Professor-Style)}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This paper documents the velCursor extension architecture and implementation as an engineering system, not a visual effect preset. The design couples a host-side inertial cursor controller with a browser-side geometric renderer embedded in Monaco. The host module generates bounded discrete cursor motion from impulse-triggered user commands; the renderer reconstructs a synthetic caret state, propagates a spring-based corner model, and emits a directional hex-cell trail with age fading, concavity shaping, and turn-point topology constraints. A second-order under-damped oscillator modulates anisotropic scale in both historical sections and the live head cap to preserve spring-like motion cues near the caret. The implementation further includes adaptive quality regulation using frame-time and motion-distance pressure, with explicit degradation and recovery rates.
+
+Beyond reproducing the code-faithful equations, this note upgrades the treatment to a hybrid dynamical-systems analysis: we provide boundedness and stability results (including Lyapunov proofs), bounded-input bounded-output guarantees for the overshoot subsystem, numerical stability and error accumulation bounds for explicit integration components, and geometric validity conditions for polygonal trail cell construction. Each formal development is followed by plain-language interpretation intended to make tuning predictable, reproducible, and explainable.
+\end{abstract}
+
+\begin{IEEEkeywords}
+cursor dynamics, human-computer interaction, motion synthesis, geometric rendering, VS Code extension, Monaco editor, adaptive quality control, hybrid systems, Lyapunov stability
+\end{IEEEkeywords}
+
+% ============================================================
+\section{Introduction}
+% ============================================================
+
+Modern editors typically represent cursor motion as piecewise-constant jumps, which is semantically correct but visually discontinuous. velCursor addresses this mismatch by introducing physically informed motion persistence with explicit control over bounded behavior.
+
+The implementation is split across two runtimes:
+\begin{enumerate}
+	\item host-side command and state control in \texttt{extension.js} and \texttt{cursorInertia.js};
+	\item browser-side rendering in \texttt{cursorTrail.js} (injected into Monaco DOM context).
+\end{enumerate}
+
+The system-level objective is to maximize perceived continuity under finite rendering budget. Unlike purely decorative trails, the implementation enforces geometric validity constraints and turn-stability gates, because invalid polygons and turn chatter were observed to cause visible spikes or dropout.
+
+\subsection{Contributions}
+This technical note provides:
+\begin{itemize}
+	\item a discrete-time model of the inertial cursor controller, including level-to-parameter interpolation;
+	\item a geometric formulation of the hex-cell trail synthesis path, including concavity and turn-side-sharing rules;
+	\item an analysis of anisotropic overshoot coupling and head attachment continuity;
+	\item the adaptive quality control law and a complexity estimate for practical tuning;
+	\item (new) boundedness and stability theorems for the coupled architecture, with Lyapunov proofs;
+	\item (new) numerical stability and error accumulation bounds for explicit integration subsystems;
+	\item (new) geometric validity lemmas for local non-self-intersection under bounded concavity.
+\end{itemize}
+
+\subsection{Plain interpretation}
+velCursor is best treated as a small control-and-render pipeline. The host decides discrete moves. The renderer turns those moves into continuous-looking motion, but only as long as the geometry stays valid and performance stays within budget. The point of the math is to make the knobs behave like knobs, not like magic.
+
+% ============================================================
+\section{System Architecture}
+% ============================================================
+
+\subsection{Host Runtime}
+The extension activates movement commands and exposes two persistent configuration scalars:
+\begin{itemize}
+	\item impulse level \(\ell_I \in \{1,\dots,10\}\), mapped to per-impulse velocity increment;
+	\item tick slowness level \(\ell_T \in \{1,\dots,10\}\), mapped to simulation tick period.
+\end{itemize}
+
+Command families are separated by intent:
+\begin{itemize}
+	\item single-step commands \texttt{cursorOnce.*} perform one fixed move and never enter inertia;
+	\item impulse commands \texttt{inertiaCursor.*} start or accelerate a run;
+	\item \texttt{inertiaCursor.stop} hard-stops the state machine.
+\end{itemize}
+
+\subsection{Renderer Runtime}
+The renderer attaches a canvas overlay to the active Monaco host, keeps native caret layers visible above custom graphics, and runs one update per animation frame. The frame pipeline is:
+\begin{enumerate}
+	\item poll native caret rectangle and synthesize a stable font-metric-aligned caret box;
+	\item advance four corner springs (\texttt{CursorSquish});
+	\item push canonicalized polygons into a trail history buffer with adaptive interpolation;
+	\item construct and fill directional hex cells from sections;
+	\item draw caret box stroke for positional legibility and head contact.
+\end{enumerate}
+
+\subsection{Plain interpretation}
+Think of the host as the actuator and the renderer as the sensor-fusion plus display stage. The host moves the real caret. The renderer samples that caret and renders a physically plausible ``afterimage'' that stays attached and does not self-destruct geometrically.
+
+% ============================================================
+\section{Formal Hybrid Systems Model}
+% ============================================================
+
+\begin{definition}[Hybrid System Decomposition]
+We model velCursor as a coupled hybrid system
+\[
+\mathcal{S} \equiv (\mathcal{H}, \mathcal{R}, \mathcal{C}),
+\]
+where \(\mathcal{H}\) is a discrete-time inertial state machine, \(\mathcal{R}\) is a continuous-time geometric dynamical system sampled at frame rate, and \(\mathcal{C}\) is a coupling map that (i) transmits caret kinematics from \(\mathcal{H}\) to \(\mathcal{R}\), and (ii) transmits motion-derived signals (e.g., displacement) to auxiliary renderer subsystems such as overshoot and quality control.
+\end{definition}
+
+\subsection{Plain interpretation}
+``Hybrid'' here just means two clocks. The host updates on a tick timer. The renderer updates on animation frames. They share state through the caret rectangle and a few derived motion scalars.
+
+% ============================================================
+\section{Host-Side Inertial Motion Model}
+% ============================================================
+
+\subsection{Level Mapping}
+Define normalized level coordinate
+\begin{equation}
+t(\ell)=\frac{\ell-1}{9}, \qquad \ell \in \{1,\dots,10\}.
+\end{equation}
+Then
+\begin{equation}
+I(\ell_I)=I_{\min}+t(\ell_I)\left(I_{\max}-I_{\min}\right),
+\end{equation}
+\begin{equation}
+\Delta t(\ell_T)=\operatorname{round}\left(T_{\min}+t(\ell_T)\left(T_{\max}-T_{\min}\right)\right),
+\end{equation}
+with code defaults \(I_{\min}=0.30\), \(I_{\max}=2.10\), \(T_{\min}=\SI{14}{\milli\second}\), and \(T_{\max}=\SI{68}{\milli\second}\).
+
+\subsection{State Machine and Tick Law}
+Let \(v_k\) denote scalar velocity at tick \(k\), \(d_k\) direction, and \(s_k\) cursor step. For same-direction impulses,
+\begin{equation}
+v_k \leftarrow \min(v_k + I, v_{\max}).
+\end{equation}
+For direction changes during a running state,
+\begin{equation}
+v_k \leftarrow \max(v_0,\; \gamma v_k),
+\end{equation}
+where \(v_0\) is the initial run velocity and \(\gamma\) is the direction-change damping factor (code uses \(0.1\)). Step magnitude is
+\begin{equation}
+s_k =
+\begin{cases}
+2, & \text{first tick of a new run} \\
+\operatorname{clamp}(\operatorname{round}(v_k), 1, s_{\max}), & \text{otherwise}.
+\end{cases}
+\end{equation}
+Velocity decays geometrically:
+\begin{equation}
+v_{k+1}=d_v v_k,\qquad d_v \in (0,1),
+\end{equation}
+and the run stops when \(v_k < v_{\text{cut}}\). Current defaults are \(d_v=0.96\), \(v_{\text{cut}}=0.99\), and \(s_{\max}=8\).
+
+\subsection{Stability and boundedness}
+
+\begin{theorem}[Host Velocity Boundedness]
+Assume \(v_0 \ge 0\), \(v_{\max} > 0\), \(I \ge 0\), and \(0<d_v<1\). Then for all ticks \(k\),
+\[
+0 \le v_k \le v_{\max}.
+\]
+\end{theorem}
+
+\begin{proof}
+The update \(v_k \leftarrow \min(v_k+I, v_{\max})\) ensures \(v_k \le v_{\max}\) immediately after any impulse addition. The decay update multiplies by \(d_v\in(0,1)\), preserving non-negativity and maintaining the upper bound. Thus \(v_k\) remains in \([0,v_{\max}]\) for all \(k\).
+\end{proof}
+
+\begin{theorem}[Exponential Decay Without Impulses]
+If no impulses occur over ticks \(k,k+1,\dots\), then
+\[
+v_{k+n} = d_v^{\,n} v_k,
+\]
+and hence \(v_{k+n}\to 0\) exponentially as \(n\to\infty\).
+\end{theorem}
+
+\begin{proof}
+Direct iteration of \(v_{j+1}=d_v v_j\) yields \(v_{k+n}=d_v^{\,n}v_k\). Since \(|d_v|<1\), the sequence converges exponentially to \(0\).
+\end{proof}
+
+\subsection{Plain interpretation}
+The host controller is a damped integrator with a hard cap. You can kick it repeatedly, but it never runs away. If you stop kicking it, it dies out quickly and predictably.
+
+% ============================================================
+\section{Caret-State Reconstruction and Corner Dynamics}
+% ============================================================
+
+\subsection{Synthetic Caret Box}
+Because DOM caret geometry can jitter across frames, the renderer re-estimates the caret box using resolved font size and line height:
+\begin{equation}
+w_c=\max(w_{\min}, f_s \, e_w), \qquad
+h_c=\max(h_{\min}, h_{\text{line}}),
+\end{equation}
+where \(f_s\) is font size and \(e_w\) is width in em units (\texttt{caretWidthEm}).
+
+\subsection{Critically Damped Corner Springs}
+Each corner tracks offset from its destination under a critically damped model. With \(x\) as offset and \(\dot{x}\) as velocity,
+\begin{equation}
+\ddot{x}+2\omega\dot{x}+\omega^2x=0,\qquad \omega=\frac{4}{\tau}.
+\end{equation}
+The code uses closed-form integration over \(\Delta t\):
+\begin{equation}
+x_{k+1}=(a+b\Delta t)e^{-\omega\Delta t},
+\end{equation}
+\begin{equation}
+\dot{x}_{k+1}=\left(b-\omega a-\omega b\Delta t\right)e^{-\omega\Delta t},
+\end{equation}
+with \(a=x_k\), \(b=\omega x_k+\dot{x}_k\). Rank-dependent \(\tau\) values shape leading/trailing response asymmetry.
+
+\subsection{Lyapunov stability of corner dynamics}
+
+\begin{definition}[Corner Energy]
+Define the energy-like Lyapunov candidate
+\begin{equation}
+V(x,\dot{x})=\frac{1}{2}\dot{x}^2+\frac{1}{2}\omega^2 x^2.
+\end{equation}
+\end{definition}
+
+\begin{theorem}[Global Asymptotic Stability of Continuous Corner Dynamics]
+For constant \(\omega>0\), the equilibrium \((x,\dot{x})=(0,0)\) of
+\(\ddot{x}+2\omega\dot{x}+\omega^2x=0\)
+is globally asymptotically stable.
+\end{theorem}
+
+\begin{proof}
+Differentiate \(V\):
+\[
+\dot{V}=\dot{x}\ddot{x}+\omega^2 x\dot{x}.
+\]
+Substitute \(\ddot{x}=-2\omega\dot{x}-\omega^2x\):
+\[
+\dot{V}=\dot{x}(-2\omega\dot{x}-\omega^2x)+\omega^2x\dot{x}=-2\omega \dot{x}^2\le 0.
+\]
+Thus \(V\) is non-increasing. Moreover, \(\dot{V}=0\) implies \(\dot{x}=0\), and then the dynamics give \(\omega^2x=0\Rightarrow x=0\). By LaSalle's invariance principle, the origin is globally asymptotically stable.
+\end{proof}
+
+\subsection{Plain interpretation}
+Each corner spring always settles. It does not ring forever. It does not inject energy. It cannot blow up. The rank-dependent \(\tau\) just changes how fast each corner settles.
+
+% ============================================================
+\section{Trail Sampling and History Construction}
+% ============================================================
+
+\subsection{Admission Metric}
+Given previous polygon \(P_{k-1}\) and candidate \(P_k\), define
+\begin{equation}
+m_k=\max\!\left(\Delta c_k,\Delta_{\max,k},\bar{\Delta}_k,\;0.35\left|\Pi(P_k)-\Pi(P_{k-1})\right|\right),
+\end{equation}
+where \(\Delta c_k\) is center displacement, \(\Delta_{\max,k}\) max corner displacement, \(\bar{\Delta}_k\) mean corner displacement, and \(\Pi(\cdot)\) perimeter. A sample is admitted only if
+\begin{equation}
+m_k \ge \max(m_{\min}, \epsilon_{\text{corner}}).
+\end{equation}
+
+\subsection{Adaptive Interpolation}
+To avoid sparse gaps after large jumps, insertion count is
+\begin{equation}
+N_k=\min\!\left(N_{\max},\left\lceil \frac{m_k}{\delta_{\text{adapt}}/q}\right\rceil\right),
+\end{equation}
+where \(q\in[q_{\min},1]\) is quality. The current defaults are \(\delta_{\text{adapt}}=0.08\) px-equivalent and \(N_{\max}=14\).
+
+\subsection{Age and Opacity}
+For sample timestamp \(t_i\),
+\begin{equation}
+f_i=\operatorname{clamp}\!\left(\frac{t_{\text{now}}-t_i}{T_{\text{TTL}}},0,1\right),
+\end{equation}
+\begin{equation}
+\alpha_i=\operatorname{clamp}\!\left((1-f_i)\alpha_0,\alpha_{\min},1\right),
+\end{equation}
+with \(T_{\text{TTL}}=\SI{420}{\milli\second}\) at current defaults.
+
+\subsection{Plain interpretation}
+The trail is not ``record every frame.'' It is ``record when motion is meaningful.'' Then it fills gaps only when needed, and it fades out according to age.
+
+% ============================================================
+\section{Hex-Cell Geometry and Turn-Stability Rules}
+% ============================================================
+
+\subsection{Section Resampling and Local Frame}
+History polygons are resampled to a fixed side count \(n_s=6\) (strict hex mode). For each section, a local tangent \(D\) and normal \(N\) are estimated from section centers and previous frame direction.
+
+\subsection{Cell Construction}
+For each consecutive section pair, the filled hex cell uses ordered vertices
+\begin{equation}
+\mathcal{H}_k = [L_b,\;R_b,\;R_p,\;R_h,\;L_h,\;L_p].
+\end{equation}
+Partial share points are
+\begin{equation}
+R_p=\operatorname{lerp}(R_b,R_h,\sigma_k),\qquad
+L_p=\operatorname{lerp}(L_b,L_h,\sigma_k).
+\end{equation}
+Concavity is applied via target
+\begin{equation}
+Q_k=M_b + s_c D_k \,\ell_k d_c,
+\end{equation}
+where \(M_b\) is base midpoint, \(s_c\in\{-1,+1\}\) direction sign, \(\ell_k\) smoothed cell length, and \(d_c\) concavity depth. A step-limited clamp moves \(R_p,L_p\) toward \(Q_k\) without geometric collapse.
+
+\subsection{Turn-Point Detection with Anti-Chatter}
+Width reversal detection is based on EMA-smoothed widths:
+\begin{equation}
+\hat{w}_k=
+\begin{cases}
+w_k, & k=0 \\
+\operatorname{lerp}(\hat{w}_{k-1}, w_k,\beta_w), & k>0,
+\end{cases}
+\end{equation}
+\begin{equation}
+\Delta w_k = \hat{w}_k - \hat{w}_{k-1}.
+\end{equation}
+Turn threshold combines absolute and relative components:
+\begin{equation}
+\epsilon_k=\max\!\left(\epsilon_{\text{abs}},\rho\max(w_{\min},w_k)\right).
+\end{equation}
+A turn candidate is accepted only if (i) sign reversal exceeds \(\epsilon_k\), (ii) both adjacent slopes exceed \(d_{\min}\), and (iii) cooldown counter is zero. During accepted turn cells, share \(\sigma_k\) is switched toward \(\sigma_{\text{turn}}\), then smoothed by a share-EMA to prevent sawtooth spikes.
+
+\subsection{Validity and Fallback}
+Every candidate cell is tested for self-intersection; optional overlap guards can reject near-duplicate geometry. If a turn-share cell fails validity, one retry is computed with normal non-turn share before skipping.
+
+\subsection{Geometric validity lemma (local)}
+
+\begin{definition}[Simple Polygon]
+A polygon is \emph{simple} if its edges do not self-intersect.
+\end{definition}
+
+\begin{lemma}[Local Validity Under Bounded Concavity]
+Assume consecutive section polygons are convex, consistently oriented, and sufficiently close such that corresponding edges do not cross under linear interpolation. If concavity displacement magnitude satisfies
+\begin{equation}
+\|Q_k - M_b\| \le \eta \,\ell_k
+\end{equation}
+for sufficiently small \(\eta\), then the constructed cell \(\mathcal{H}_k\) remains simple.
+\end{lemma}
+
+\begin{proof}[Proof sketch]
+The cell vertices are continuous functions of the share parameter and concavity target displacement. For \(\eta=0\), the construction reduces to a non-self-intersecting interpolation of convex sections under the stated correspondence assumption. By continuity of polygon vertex mapping and compactness of the small-displacement neighborhood, there exists \(\eta^\star>0\) such that for all \(\eta\in[0,\eta^\star]\) the edge intersection predicates remain false. Hence the cell remains simple.
+\end{proof}
+
+\subsection{Plain interpretation}
+You can bend the ribbon, but only up to a controlled amount. If you over-bend, the cell can fold. The code avoids this by clamping and by validating the polygon. The lemma formalizes why ``small bend'' is safe.
+
+% ============================================================
+\section{Overshoot-Coupled Anisotropic Deformation}
+% ============================================================
+
+\subsection{Oscillator}
+A separate under-damped scalar oscillator models visual overshoot:
+\begin{equation}
+\ddot{z}+2\zeta\omega\dot{z}+\omega^2 z=0.
+\end{equation}
+The implementation applies explicit integration:
+\begin{equation}
+\begin{aligned}
+a_k &= -2\zeta\omega \dot{z}_k - \omega^2 z_k, \\
+\dot{z}_{k+1} &= \dot{z}_k + a_k\Delta t, \\
+z_{k+1} &= z_k + \dot{z}_{k+1}\Delta t.
+\end{aligned}
+\end{equation}
+Motion impulses inject velocity \(\dot{z}\leftarrow \dot{z}+\Delta \dot{z}\), where \(\Delta \dot{z}\) is proportional to frame displacement and clamped by \texttt{maxKick}.
+
+\subsection{Anisotropic Trail Scaling}
+Let \(\xi=\operatorname{clamp}(g z,\xi_{\min},\xi_{\max})\). For age fraction \(f\), envelope
+\begin{equation}
+e(f)=0.20+0.80(1-f).
+\end{equation}
+Parallel and perpendicular scales are
+\begin{equation}
+s_{\parallel}(f)=\max(s_{\text{floor}}, e(f)\left[1+\xi\,g_{\parallel}\right]),
+\end{equation}
+\begin{equation}
+s_{\perp}(f)=\max(s_{\text{floor}}, e(f)\left[1+\xi\,g_{\perp}\right]).
+\end{equation}
+The same transform is applied to history sections and the live head polygon, preserving overshoot cues near the caret rather than only in the tail.
+
+\subsection{BIBO stability of overshoot oscillator}
+
+\begin{theorem}[BIBO Stability of Stable Linear Overshoot]
+Assume \(0<\zeta<1\) and \(\omega>0\). If impulse injection satisfies \(|\Delta \dot{z}|\le M\) at any frame, then the oscillator state remains bounded: there exists a constant \(C(\zeta,\omega)\) such that \(|z(t)|\le C M\) for all \(t\).
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+The continuous-time under-damped oscillator is linear time-invariant with eigenvalues \(-\zeta\omega \pm i\omega\sqrt{1-\zeta^2}\), which have strictly negative real part. Thus the system is exponentially stable and hence BIBO stable. Bounded impulsive velocity injections correspond to bounded inputs to the stable LTI system, yielding bounded output with gain bounded by the system's induced norm.
+\end{proof}
+
+\subsection{Numerical stability and error bounds (explicit integration)}
+
+\begin{theorem}[Sufficient Euler Step Condition (Conservative)]
+Consider the linear oscillator in first-order form \(\dot{y}=Ay\) with eigenvalues of \(A\) having magnitude \(\mathcal{O}(\omega)\). A conservative sufficient condition to avoid catastrophic Euler divergence is
+\begin{equation}
+\Delta t < \frac{2}{\omega}.
+\end{equation}
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Forward Euler yields \(y_{k+1}=(I+A\Delta t)y_k\). A sufficient stability condition is spectral radius \(\rho(I+A\Delta t)<1\). For oscillatory modes dominated by \(\omega\), a conservative bound is \(\Delta t<2/\omega\), consistent with the classical stability region constraints.
+\end{proof}
+
+\begin{proposition}[Global Error Growth Bound (Finite Horizon)]
+For a Lipschitz continuous system integrated with forward Euler with step \(\Delta t\), the global truncation error over \(N\) steps satisfies
+\[
+\|e_N\| \le K \Delta t,
+\]
+for some constant \(K\) depending on the Lipschitz constant and time horizon \(T=N\Delta t\).
+\end{proposition}
+
+\subsection{Plain interpretation}
+Overshoot is a ``little bounce.'' The underlying continuous system is stable. The only way to break it is numerical abuse (giant frame times or absurd kicks). The conservative timestep bound tells you where Euler stops behaving, and the error bound tells you the drift stays controlled over finite time.
+
+% ============================================================
+\section{Caret Attachment, Head Bridge, and Cap}
+% ============================================================
+
+To eliminate visual detachment, the renderer appends a live head polygon reconstructed from current caret rectangle and padded by \texttt{rect.padPx}. A bridge section
+\begin{equation}
+P_{\text{bridge}}=\operatorname{lerp}(P_{\text{last}},P_{\text{head}},0.6)
+\end{equation}
+is inserted prior to head insertion. The final head cap is filled even when the last cell is rejected, guaranteeing visual contact between trail and caret box.
+
+\subsection{Plain interpretation}
+Even if the last hex cell is rejected for validity, the trail still touches the caret. The bridge is basically a continuity patch: it ensures no visual ``gap'' appears at the head.
+
+% ============================================================
+\section{Adaptive Quality Controller}
+% ============================================================
+
+\subsection{Pressure Computation}
+Frame-time EMA:
+\begin{equation}
+\bar{t}_{k+1}=\operatorname{lerp}(\bar{t}_k,t_k,\alpha_f).
+\end{equation}
+Frame and distance pressures:
+\begin{equation}
+p_f=\operatorname{clamp}\!\left(\frac{\bar{t}_k-t^\star}{\Delta t_w},0,1\right),\quad
+p_d=\operatorname{clamp}\!\left(\frac{d_k}{d_{\text{norm}}},0,1\right).
+\end{equation}
+Hybrid pressure and target quality:
+\begin{equation}
+p_k=\omega_f p_f + \omega_d p_d,\qquad
+q_k^\star = 1 - p_k(1-q_{\min}).
+\end{equation}
+Quality then tracks \(q_k^\star\) with asymmetric rates \(r_\downarrow, r_\uparrow\) to avoid oscillatory quality pumping.
+
+\subsection{Budget Effects}
+As \(q\) decreases, the renderer increases effective subdivision step, reduces max subdivisions and history depth under configured thresholds, and attenuates blur. This preserves frame stability before sacrificing continuity-critical structure.
+
+\subsection{Contraction proof}
+
+\begin{theorem}[Contraction Toward Target Quality]
+Suppose the quality update is of the form
+\[
+q_{k+1} = q_k + r (q_k^\star - q_k),
+\]
+with \(0<r<1\) (interpreting asymmetric rates as piecewise constants each in \((0,1)\)). Then the mapping \(T(q)=q+r(q^\star-q)\) is a contraction with Lipschitz constant \(|1-r|<1\). Consequently, for constant \(q^\star\), the sequence converges exponentially to \(q^\star\).
+\end{theorem}
+
+\begin{proof}
+For any \(q_1,q_2\),
+\[
+|T(q_1)-T(q_2)| = |(1-r)(q_1-q_2)| = |1-r|\,|q_1-q_2|.
+\]
+Since \(0<r<1\), we have \(|1-r|<1\). Thus \(T\) is a contraction, giving exponential convergence for constant target \(q^\star\).
+\end{proof}
+
+\subsection{Plain interpretation}
+This controller does not ``hunt.'' It smoothly drifts toward whatever quality level the pressure suggests. Separate down/up rates prevent quality from instantly bouncing back and causing flicker.
+
+% ============================================================
+\section{Computational Characteristics}
+% ============================================================
+
+Let \(H\) be retained history entries, \(U\) interpolated draw-time sections, and \(C\) emitted cells in a frame. The dominant cost is
+\begin{equation}
+\mathcal{O}(H + U n_s + C n_s),
+\end{equation}
+with \(n_s=6\) in strict mode. Memory for trail geometry is approximately
+\begin{equation}
+\mathcal{O}(H n_s)
+\end{equation}
+for section-like representations, plus fixed scratch buffers.
+
+\subsection{Plain interpretation}
+The cost is basically linear in trail length because hex mode fixes the per-section vertex count. Tuning \(H\), \(N_{\max}\), and quality thresholds gives predictable performance control.
+
+% ============================================================
+\section{Global Boundedness of the Coupled System}
+% ============================================================
+
+\begin{theorem}[Global Boundedness Under Practical Assumptions]
+Assume:
+(i) host impulses are bounded and \(v_k\) is clamped as implemented;
+(ii) corner dynamics use closed-form integration of a stable critically damped system;
+(iii) overshoot kicks are clamped and frame timestep satisfies practical bounds (i.e., no unbounded \(\Delta t\));
+(iv) quality \(q\) is clamped to \([q_{\min},1]\) and history buffers have fixed capacity.
+Then all internal state variables of velCursor remain bounded for all time.
+\end{theorem}
+
+\begin{proof}
+Host velocity is bounded by Theorem 1. Corner offsets converge and remain bounded by Lyapunov stability. Overshoot is BIBO stable in continuous time and remains bounded in discrete time under practical timestep and bounded kick assumptions. Quality is clamped to a compact interval and is contractive toward a bounded target. History and scratch buffers are bounded by construction. Therefore the full coupled state remains bounded.
+\end{proof}
+
+\subsection{Plain interpretation}
+This is the engineering safety statement: there is no parameter path that can cause infinite values. Worst case, you degrade quality or clamp geometry, but you do not blow up the system.
+
+% ============================================================
+\section{Implementation Defaults (Current Snapshot)}
+% ============================================================
+
+\begin{table}[!t]
+\caption{Selected defaults from current implementation.}
+\label{tab:defaults}
+\centering
+\scriptsize
+\begin{tabular}{p{0.45\columnwidth} c p{0.37\columnwidth}}
+\toprule
+Parameter & Value & Role \\
+\midrule
+\texttt{trail.ttlMs} & 420 & trail lifetime (\si{\milli\second}) \\
+\texttt{trail.maxRects} & 48 & history capacity \\
+\texttt{trail.ribbonSides} & 6 & strict hex resampling \\
+\texttt{stackHex.concavityDepth} & 0.16 & concavity strength \\
+\texttt{stackHex.partialEdgeShare} & 0.82 & nominal side sharing \\
+\texttt{stackHex.turnPartialEdgeShare} & 0.42 & turn-cell side sharing \\
+\texttt{overshoot.omega} & 16 & oscillator frequency (\si{\radian\per\second}) \\
+\texttt{overshoot.zeta} & 0.16 & damping ratio \\
+\texttt{performance.qualityMin} & 0.38 & quality floor \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================
+\section{Limitations and Engineering Risks}
+% ============================================================
+
+\begin{itemize}
+	\item The renderer depends on Monaco DOM contracts (e.g., \texttt{.cursor} element availability); upstream DOM changes can break sampling.
+	\item Explicit Euler integration for the overshoot oscillator is stable in current parameter ranges but has known step-size sensitivity under extreme frame stalls or unbounded kicks.
+	\item Geometric validity checks are local; global topological guarantees across long histories are not formally proven, though bounded history and local checks substantially reduce risk.
+	\item Perceived smoothness remains hardware and display-rate dependent despite adaptive control.
+\end{itemize}
+
+\subsection{Plain interpretation}
+The math makes the system robust, but the world can still break it: DOM changes, absurd frame stalls, or pathological geometry. The code mitigates these with clamping and fallback, but this is not a formal proof of correctness under arbitrary upstream changes.
+
+% ============================================================
+\section{Conclusion}
+% ============================================================
+
+velCursor is a coupled interactive dynamics system: inertial command synthesis at the host layer and constrained polygonal rendering at the browser layer. The current implementation goes beyond a visual trail by enforcing geometric validity, turn-stability filtering, and adaptive quality control while maintaining near-caret attachment through a live head bridge and cap.
+
+In addition to the code-faithful model, we established formal properties that matter for tuning and maintenance:
+bounded host velocity, Lyapunov-stable corner dynamics, BIBO-stable overshoot (with practical numerical conditions), contraction-stable quality regulation, and local validity guarantees for bounded concavity. Collectively, these results support systematic parameter adjustment rather than aesthetic trial-and-error.
+
+\section*{Acknowledgment}
+This document is code-faithful to the current repository state and intended as a maintainable technical reference for future tuning and refactoring work.
+
+\begin{thebibliography}{1}
+\bibitem{ext}
+velCursor Repository, ``\texttt{extension.js},'' command activation and configuration synchronization module.
+\bibitem{inertia}
+velCursor Repository, ``\texttt{cursorInertia.js},'' inertial cursor state machine and level mapping module.
+\bibitem{trail}
+velCursor Repository, ``\texttt{cursorTrail.js},'' Monaco-side spring dynamics and hex-trail renderer.
+\bibitem{pkg}
+velCursor Repository, ``\texttt{package.json},'' command, keybinding, and configuration schema.
+\end{thebibliography}
+
+\end{document}

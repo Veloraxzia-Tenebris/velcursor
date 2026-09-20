@@ -80,675 +80,782 @@
 	// ======================================================================
 
 	const CFG = {
-		// Units: CSS color string.
-		// Range: Any valid CSS color (recommended hex like #RRGGBB or #RRGGBBAA).
-		// +: Brighter/lighter colors increase perceived trail prominence.
-		// -: Darker/muted colors reduce trail prominence.
+		// Mathematical tuning map (primary runtime equations):
+		// 1) alpha_cell = clamp((1 - frac) * opacity, minAlpha, 1)
+		// 2) x'' + 2*zeta*omega*x' + omega^2*x = 0, with kick v <- v + impulse
+		// 3) lenScale(frac) = envelope(frac) * (1 + scaleExtra * trailLenGain)
+		// 4) widthScale(frac) = envelope(frac) * (1 + scaleExtra * trailWidthGain)
+		// 5) handoffWidth = clamp(sectionWidth * smoothWidth, minCellWidthPx, sectionWidth * maxWidthScale)
+		// 6) perf EMA: frameEma <- lerp(frameEma, frameMs, emaAlpha)
+		// Units u: CSS color string.
+		// Domain D: Any valid CSS color (recommended hex like #RRGGBB or #RRGGBBAA).
+		// Sensitivity (+): Brighter/lighter colors increase perceived trail prominence.
+		// Sensitivity (-): Darker/muted colors reduce trail prominence.
 		color: "#FFC0CB",
 
-		// Units: Unitless alpha multiplier.
-		// Range: [0, 1].
-		// +: Trail becomes more opaque and visually stronger.
-		// -: Trail becomes more transparent and subtle.
+		// Units u: Unitless alpha multiplier.
+		// Domain D: [0, 1].
+		// Sensitivity (+): Trail becomes more opaque and visually stronger.
+		// Sensitivity (-): Trail becomes more transparent and subtle.
 		opacity: 0.69,
 
 		shadow: {
-			// Units: Boolean flag.
-			// Range: true | false.
-			// +: true enables glow/shadow contribution around custom rendering.
-			// -: false disables glow/shadow contribution.
+			// Units u: Boolean flag.
+			// Domain D: true | false.
+			// Sensitivity (+): true enables glow/shadow contribution around custom rendering.
+			// Sensitivity (-): false disables glow/shadow contribution.
 			enabled: true,
 
-			// Units: CSS color string or null.
-			// Range: null or any valid CSS color string.
-			// +: Brighter/saturated override color makes glow more noticeable.
-			// -: Darker/transparent override color makes glow less noticeable.
+			// Units u: CSS color string or null.
+			// Domain D: null or any valid CSS color string.
+			// Sensitivity (+): Brighter/saturated override color makes glow more noticeable.
+			// Sensitivity (-): Darker/transparent override color makes glow less noticeable.
 			color: "#ff00b3",
 
-			// Units: Unitless blur multiplier.
-			// Range: >= 0 (recommended [0, 2]).
-			// +: Softer, wider glow radius.
-			// -: Tighter, crisper glow radius.
+			// Units u: Unitless blur multiplier.
+			// Domain D: >= 0 (recommended [0, 2]).
+			// Sensitivity (+): Softer, wider glow radius.
+			// Sensitivity (-): Tighter, crisper glow radius.
 			blurFactor: 1.05
 		},
 
 		// Trail sample polygon source settings (from spring corners).
 		rect: {
-			// Units: px.
-			// Range: >= 0.
-			// +: Trail polygon expands farther from spring corners.
-			// -: Trail polygon hugs spring corners more tightly.
+			// Units u: px.
+			// Domain D: >= 0.
+			// Sensitivity (+): Trail polygon expands farther from spring corners.
+			// Sensitivity (-): Trail polygon hugs spring corners more tightly.
 			padPx: 2,
-			// Units: px.
-			// Range: >= 0.
-			// +: Reserved setting (currently no active runtime effect).
-			// -: Reserved setting (currently no active runtime effect).
+			// Units u: px.
+			// Domain D: >= 0.
+			// Sensitivity (+): Reserved setting (currently no active runtime effect).
+			// Sensitivity (-): Reserved setting (currently no active runtime effect).
 			radiusPx: 16
 		},
 
 		// Hollow caret box settings (drawn around the live caret).
 		box: {
-			// Units: px.
-			// Range: >= 0.
-			// +: Larger base padding at reference font size.
-			// -: Smaller base padding at reference font size.
+			// Units u: px.
+			// Domain D: >= 0.
+			// Sensitivity (+): Larger base padding at reference font size.
+			// Sensitivity (-): Smaller base padding at reference font size.
 			// Runtime scales this by current font size.
 			padPx: 4,
-			// Units: px.
-			// Range: >= 0.
-			// +: Larger base corner radius at reference font size.
-			// -: Smaller base corner radius at reference font size.
+			// Units u: px.
+			// Domain D: >= 0.
+			// Sensitivity (+): Larger base corner radius at reference font size.
+			// Sensitivity (-): Smaller base corner radius at reference font size.
 			// Runtime scales this by current font size.
 			radiusPx: 4,
-			// Units: px.
-			// Range: > 0.
-			// +: Hollow box stroke gets thicker and more visible.
-			// -: Hollow box stroke gets thinner and lighter.
+			// Units u: px.
+			// Domain D: > 0.
+			// Sensitivity (+): Hollow box stroke gets thicker and more visible.
+			// Sensitivity (-): Hollow box stroke gets thinner and lighter.
 			lineWidthPx: 2,
 
-			// Units: px.
-			// Range: > 0.
-			// +: Higher reference lowers runtime scaling for same active font size.
-			// -: Lower reference raises runtime scaling for same active font size.
+			// Units u: px.
+			// Domain D: > 0.
+			// Sensitivity (+): Higher reference lowers runtime scaling for same active font size.
+			// Sensitivity (-): Lower reference raises runtime scaling for same active font size.
 			scaleRefFontSizePx: 14,
 
-			// Units: CSS color string or null.
-			// Range: null or any valid CSS color string.
-			// +: Brighter/saturated color increases hollow box prominence.
-			// -: Darker/transparent color decreases hollow box prominence.
+			// Units u: CSS color string or null.
+			// Domain D: null or any valid CSS color string.
+			// Sensitivity (+): Brighter/saturated color increases hollow box prominence.
+			// Sensitivity (-): Darker/transparent color decreases hollow box prominence.
 			// null => use top-level trail `color`.
 			color: "#FFC0CB",
 
-			// Units: unitless alpha multiplier or null.
-			// Range: null or [0, 1].
-			// +: Higher value makes hollow box more opaque.
-			// -: Lower value makes hollow box more transparent.
+			// Units u: unitless alpha multiplier or null.
+			// Domain D: null or [0, 1].
+			// Sensitivity (+): Higher value makes hollow box more opaque.
+			// Sensitivity (-): Lower value makes hollow box more transparent.
 			// null => use top-level trail `opacity`.
 			opacity: 0.47
 		},
 
 		// Trail density and fade behavior.
+		// Equation use:
+		// - push criterion ~ interpMetric >= max(minMovePx, cornerInterpEpsilonPx)
+		// - alpha(frac) = clamp((1 - frac) * opacity, minAlpha, 1)
+		// - adaptive insertion segments ~ ceil(interpMetric / adaptiveInterpStepPx)
 		trail: {
-			// Units: ms.
-			// Range: > 0.
-			// +: Trail persists longer before fully fading out.
-			// -: Trail disappears sooner.
-			ttlMs: 256,
-			// Units: count (samples).
-			// Range: integer >= 1.
-			// +: Denser/longer history, but higher CPU/GPU cost.
-			// -: Shorter history, lower cost.
-			maxRects: 30,
-			// Units: unitless alpha floor.
-			// Range: [0, 1].
-			// +: Old trail never gets very faint; tail stays visible longer.
-			// -: Old trail can fade closer to fully transparent.
+			// Units u: ms.
+			// Domain D: > 0.
+			// Sensitivity (+): Trail persists longer before fully fading out.
+			// Sensitivity (-): Trail disappears sooner.
+				ttlMs: 420,
+			// Units u: count (samples).
+			// Domain D: integer >= 1.
+			// Sensitivity (+): Denser/longer history, but higher CPU/GPU cost.
+			// Sensitivity (-): Shorter history, lower cost.
+				maxRects: 48,
+			// Units u: unitless alpha floor.
+			// Domain D: [0, 1].
+			// Sensitivity (+): Old trail never gets very faint; tail stays visible longer.
+			// Sensitivity (-): Old trail can fade closer to fully transparent.
 			minAlpha: 0.0,
-			// Units: px.
-			// Range: >= 0.
-			// +: Requires larger movement before adding a new trail sample.
-			// -: Captures smaller motions; increases sample frequency.
+			// Units u: px.
+			// Domain D: >= 0.
+			// Sensitivity (+): Requires larger movement before adding a new trail sample.
+			// Sensitivity (-): Captures smaller motions; increases sample frequency.
 			minMovePx: 0.08,
-			// Units: character widths.
-			// Range: >= 0.
-			// +: Suppresses trail for more short caret hops (e.g., normal typing).
-			// -: Allows trail on shorter caret hops.
+			// Units u: character widths.
+			// Domain D: >= 0.
+			// Sensitivity (+): Suppresses trail for more short caret hops (e.g., normal typing).
+			// Sensitivity (-): Allows trail on shorter caret hops.
 			minMoveCharsForTrail: 0.0,
-			// Units: px.
-			// Range: >= 0.
-			// +: Suppresses tiny corner-shape changes more aggressively.
-			// -: Allows subtle corner changes to create trail samples.
+			// Units u: px.
+			// Domain D: >= 0.
+			// Sensitivity (+): Suppresses tiny corner-shape changes more aggressively.
+			// Sensitivity (-): Allows subtle corner changes to create trail samples.
 			cornerInterpEpsilonPx: 0.02,
-			// Units: px.
-			// Range: > 0.
-			// +: Wider interpolation spacing; fewer intermediate samples.
-			// -: Tighter interpolation spacing; more intermediate samples.
+			// Units u: px.
+			// Domain D: > 0.
+			// Sensitivity (+): Wider interpolation spacing; fewer intermediate samples.
+			// Sensitivity (-): Tighter interpolation spacing; more intermediate samples.
 			interpStepPx: 0.02,
-			// Units: px.
-			// Range: > 0.
-			// +: Reduces adaptive insertion density (less smoothing, faster).
-			// -: Increases adaptive insertion density (smoother, heavier).
-			adaptiveInterpStepPx: 0.12,
-			// Units: count (samples per push).
-			// Range: integer >= 1.
-			// +: Allows denser gap filling for large motion jumps.
-			// -: Hard-limits insertion more aggressively for performance.
-			maxInterpPerPush: 10,
-			// Units: px.
-			// Range: > 0.
-			// +: Fewer draw-time subdivisions across long spans.
-			// -: More draw-time subdivisions for smoother ribbons.
-			drawSubdivideStepPx: 0.24,
-			// Units: count (subdivisions per pair).
-			// Range: integer >= 1.
-			// +: Allows more geometric refinement (smoother, heavier).
-			// -: Caps refinement earlier (faster, potentially rougher).
-			maxDrawSubdivisions: 16,
-			// Units: count (polygon sides).
-			// Range: integer >= 3.
-			// +: Smoother, rounder ribbon cells that better conform to the trail.
-			// -: Fewer sides reduce draw cost but increase faceting.
+			// Units u: px.
+			// Domain D: > 0.
+			// Sensitivity (+): Reduces adaptive insertion density (less smoothing, faster).
+			// Sensitivity (-): Increases adaptive insertion density (smoother, heavier).
+				adaptiveInterpStepPx: 0.08,
+			// Units u: count (samples per push).
+			// Domain D: integer >= 1.
+			// Sensitivity (+): Allows denser gap filling for large motion jumps.
+			// Sensitivity (-): Hard-limits insertion more aggressively for performance.
+				maxInterpPerPush: 14,
+			// Units u: px.
+			// Domain D: > 0.
+			// Sensitivity (+): Fewer draw-time subdivisions across long spans.
+			// Sensitivity (-): More draw-time subdivisions for smoother ribbons.
+				drawSubdivideStepPx: 0.18,
+			// Units u: count (subdivisions per pair).
+			// Domain D: integer >= 1.
+			// Sensitivity (+): Allows more geometric refinement (smoother, heavier).
+			// Sensitivity (-): Caps refinement earlier (faster, potentially rougher).
+				maxDrawSubdivisions: 24,
+			// Units u: count (polygon sides).
+			// Domain D: integer >= 3.
+			// Sensitivity (+): Smoother, rounder ribbon cells that better conform to the trail.
+			// Sensitivity (-): Fewer sides reduce draw cost but increase faceting.
 			ribbonSides: 6,
-			// Units: count (polygon sides).
-			// Range: integer >= 3.
-			// +: Preserves more contour detail at low quality.
-			// -: Drops detail further to save more resources under pressure.
+			// Units u: count (polygon sides).
+			// Domain D: integer >= 3.
+			// Sensitivity (+): Preserves more contour detail at low quality.
+			// Sensitivity (-): Drops detail further to save more resources under pressure.
 			ribbonSidesMin: 6,
-			// Units: Boolean flag.
-			// Range: true | false.
-			// +: true enforces corner correspondence to reduce twist artifacts.
-			// -: false may allow occasional index/winding mismatches.
+			// Units u: Boolean flag.
+			// Domain D: true | false.
+			// Sensitivity (+): true enforces corner correspondence to reduce twist artifacts.
+			// Sensitivity (-): false may allow occasional index/winding mismatches.
 			twistGuardEnabled: true,
-			// Units: unitless blend factor.
-			// Range: [0, 1].
-			// +: Stronger temporal smoothing; less jitter but more lag.
-			// -: More immediate response; can look noisier.
-			temporalSmoothFactor: 0.32,
-			// Units: px.
-			// Range: > 0.
-			// +: Keeps smoothing active for larger movements.
-			// -: Releases smoothing sooner during motion.
-			smoothReleaseDistancePx: 64,
-			// Units: px per pushed sample.
-			// Range: >= 0.
-			// +: Permits larger per-sample corner jumps (snappier, riskier).
-			// -: Tighter per-sample corner clamp (smoother, more damped).
+			// Units u: unitless blend factor.
+			// Domain D: [0, 1].
+			// Sensitivity (+): Stronger temporal smoothing; less jitter but more lag.
+			// Sensitivity (-): More immediate response; can look noisier.
+				temporalSmoothFactor: 0.42,
+			// Units u: px.
+			// Domain D: > 0.
+			// Sensitivity (+): Keeps smoothing active for larger movements.
+			// Sensitivity (-): Releases smoothing sooner during motion.
+				smoothReleaseDistancePx: 88,
+			// Units u: px per pushed sample.
+			// Domain D: >= 0.
+			// Sensitivity (+): Permits larger per-sample corner jumps (snappier, riskier).
+			// Sensitivity (-): Tighter per-sample corner clamp (smoother, more damped).
 			cornerStepClampPx: 8,
-			// Units: px allowance per px center movement.
-			// Range: >= 0.
-			// +: Corner clamp loosens more during fast center motion.
-			// -: Corner clamp stays stricter even at higher speed.
+			// Units u: px allowance per px center movement.
+			// Domain D: >= 0.
+			// Sensitivity (+): Corner clamp loosens more during fast center motion.
+			// Sensitivity (-): Corner clamp stays stricter even at higher speed.
 			cornerStepSpeedScale: 4,
 
+			// Hex cell model equations:
+			// - handoffWidth = clamp(sectionWidth * smoothWidth, minCellWidthPx, sectionWidth * maxWidthScale)
+			// - concavityTarget = baseMid + D * (concavitySign * smoothLen * concavityDepth)
+			// - turn detection uses EMA-smoothed width slope, absolute+relative epsilon, and cell cooldown
 			stackHex: {
-				// Units: Boolean flag.
-				// Range: true | false.
-				// +: true enables stacked concave-hex trail cell rendering.
-				// -: false disables stacked hex trail cell rendering.
+				// Units u: Boolean flag.
+				// Domain D: true | false.
+				// Sensitivity (+): true enables stacked concave-hex trail cell rendering.
+				// Sensitivity (-): false disables stacked hex trail cell rendering.
 				enabled: true,
-				// Units: unitless fraction.
-				// Range: [0, 1].
-				// +: Shares more of each side edge with the next cell.
-				// -: Shares less and makes cells more distinct.
+				// Units u: unitless fraction.
+				// Domain D: [0, 1].
+				// Sensitivity (+): Shares more of each side edge with the next cell.
+				// Sensitivity (-): Shares less and makes cells more distinct.
 				partialEdgeShare: 0.82,
-				// Units: unitless fraction of local cell width.
-				// Range: >= 0.
-				// +: Stronger concave pull near the base edge.
-				// -: Flatter, less concave cell profile.
-				concavityDepth: 0.0,
-				// Units: count (cells).
-				// Range: integer >= 0.
-				// +: More head cells get extra geometric detail pressure near the caret.
-				// -: Fewer head cells get near-caret detail pressure.
+				// Units u: unitless fraction of local cell width.
+				// Domain D: >= 0.
+				// Sensitivity (+): Stronger concave pull near the base edge.
+				// Sensitivity (-): Flatter, less concave cell profile.
+				concavityDepth: 0.16,
+				// Units u: Boolean flag.
+				// Domain D: true | false.
+				// Sensitivity (+): true uses turn-point share override (one fully shared side only).
+				// Sensitivity (-): false always uses normal partial side sharing.
+				turnOnlyFullSideEnabled: true,
+				// Units u: px.
+				// Domain D: > 0.
+				// Sensitivity (+): Higher value ignores smaller width-slope sign noise.
+				// Sensitivity (-): Lower value detects turning points more aggressively.
+				turnDetectEpsilonPx: 0.4,
+				// Units u: unitless fraction.
+				// Domain D: [0, 1].
+				// Sensitivity (+): Higher value keeps more side sharing at turn cells.
+				// Sensitivity (-): Lower value keeps only base-side full continuity at turn cells.
+				turnPartialEdgeShare: 0.42,
+				// Units u: keyword.
+				// Domain D: "both" | "grow_to_shrink".
+				// Sensitivity (+): "both" applies override on both width-turn directions.
+				// Sensitivity (-): "grow_to_shrink" applies only on + to - width turns.
+				turnScope: "both",
+				// Units u: unitless EMA alpha.
+				// Domain D: [0, 1].
+				// Sensitivity (+): Tracks local width changes more quickly; can reintroduce turn jitter.
+				// Sensitivity (-): Smooths width-slope noise more aggressively; increases turn detection lag.
+				turnWidthEmaAlpha: 0.35,
+				// Units u: unitless ratio.
+				// Domain D: >= 0.
+				// Sensitivity (+): Raises relative turn epsilon, suppressing small width reversals.
+				// Sensitivity (-): Lowers relative turn epsilon, making turn detection more sensitive.
+				turnDetectEpsilonRatio: 0.1,
+				// Units u: px.
+				// Domain D: >= 0.
+				// Sensitivity (+): Requires larger width-slope magnitude before a turn can trigger.
+				// Sensitivity (-): Allows smaller width-slope reversals to trigger turns.
+				turnMinDeltaPx: 0.75,
+				// Units u: count (cells).
+				// Domain D: integer >= 0.
+				// Sensitivity (+): Increases cooldown after a turn to prevent immediate retriggers.
+				// Sensitivity (-): Decreases cooldown and allows denser turn triggers.
+				turnCooldownCells: 4,
+				// Units u: unitless alpha.
+				// Domain D: [0, 1].
+				// Sensitivity (+): Share transitions react faster; sharper side-profile changes.
+				// Sensitivity (-): Share transitions smooth more gradually; fewer sawtooth artifacts.
+				turnShareLerpAlpha: 0.3,
+				// Units u: unitless scale.
+				// Domain D: [0, 1].
+				// Sensitivity (+): Preserves more concavity deformation on turn cells.
+				// Sensitivity (-): Softens concavity on turn cells, reducing spike severity.
+				turnConcavityScale: 0.55,
+				// Units u: count (cells).
+				// Domain D: integer >= 0.
+				// Sensitivity (+): More head cells get extra geometric detail pressure near the caret.
+				// Sensitivity (-): Fewer head cells get near-caret detail pressure.
 				headQuadCells: 0,
-				// Units: keyword.
-				// Range: "forward" | "backward".
-				// +: "forward" points concavity toward motion.
-				// -: "backward" points concavity opposite motion.
+				// Units u: keyword.
+				// Domain D: "forward" | "backward".
+				// Sensitivity (+): "forward" points concavity toward motion.
+				// Sensitivity (-): "backward" points concavity opposite motion.
 				concavityDirection: "forward",
-				// Units: Boolean flag.
-				// Range: true | false.
-				// +: true uses fill-only cells (no outlines).
-				// -: false also draws cell outlines.
+				// Units u: Boolean flag.
+				// Domain D: true | false.
+				// Sensitivity (+): true uses fill-only cells (no outlines).
+				// Sensitivity (-): false also draws cell outlines.
 				fillOnly: true,
-				// Units: px.
-				// Range: >= 0.
-				// +: Higher value tolerates slightly looser overlap checks.
-				// -: Lower value enforces stricter non-overlap behavior.
+				// Units u: px.
+				// Domain D: >= 0.
+				// Sensitivity (+): Higher value tolerates slightly looser overlap checks.
+				// Sensitivity (-): Lower value enforces stricter non-overlap behavior.
 				overlapEpsilonPx: 0.25,
-				// Units: Boolean flag.
-				// Range: true | false.
-				// +: true rejects cells overlapping recent history.
-				// -: false prioritizes continuity and avoids overlap-based cell drops.
+				// Units u: Boolean flag.
+				// Domain D: true | false.
+				// Sensitivity (+): true rejects cells overlapping recent history.
+				// Sensitivity (-): false prioritizes continuity and avoids overlap-based cell drops.
 				overlapGuardEnabled: false,
-				// Units: px.
-				// Range: > 0.
-				// +: Higher value avoids very thin/degenerate cell widths.
-				// -: Lower value allows thinner cells.
+				// Units u: px.
+				// Domain D: > 0.
+				// Sensitivity (+): Higher value avoids very thin/degenerate cell widths.
+				// Sensitivity (-): Lower value allows thinner cells.
 				minCellWidthPx: 0.8,
-				// Units: count (cells).
-				// Range: integer >= 2.
-				// +: Checks overlap against more history; safer but can cull valid cells.
-				// -: Checks fewer recent cells; smoother continuity with slightly more risk.
+				// Units u: count (cells).
+				// Domain D: integer >= 2.
+				// Sensitivity (+): Checks overlap against more history; safer but can cull valid cells.
+				// Sensitivity (-): Checks fewer recent cells; smoother continuity with slightly more risk.
 				overlapLookbackCells: 3,
-				// Units: count (cells per frame).
-				// Range: integer >= 1.
-				// +: More cells for finer geometric detail.
-				// -: Fewer cells for lower render cost.
+				// Units u: count (cells per frame).
+				// Domain D: integer >= 1.
+				// Sensitivity (+): More cells for finer geometric detail.
+				// Sensitivity (-): Fewer cells for lower render cost.
 				maxCellsPerFrame: 144,
 
 				// Dynamic size controller for smoothness/detail demand.
-				// Units: Boolean flag.
-				// Range: true | false.
-				// +: true dynamically adjusts cell length/width.
-				// -: false keeps fixed base sizing.
+				// Units u: Boolean flag.
+				// Domain D: true | false.
+				// Sensitivity (+): true dynamically adjusts cell length/width.
+				// Sensitivity (-): false keeps fixed base sizing.
 				dynamicSizeEnabled: true,
-				// Units: px.
-				// Range: > 0.
-				// +: Larger nominal along-motion cell length.
-				// -: Shorter nominal along-motion cell length.
+				// Units u: px.
+				// Domain D: > 0.
+				// Sensitivity (+): Larger nominal along-motion cell length.
+				// Sensitivity (-): Shorter nominal along-motion cell length.
 				baseLenPx: 8,
-				// Units: px.
-				// Range: > 0.
-				// +: Higher floor prevents very short cells in high-detail regions.
-				// -: Lower floor allows denser/smaller cells.
+				// Units u: px.
+				// Domain D: > 0.
+				// Sensitivity (+): Higher floor prevents very short cells in high-detail regions.
+				// Sensitivity (-): Lower floor allows denser/smaller cells.
 				minLenPx: 3,
-				// Units: px.
-				// Range: >= minLenPx.
-				// +: Larger cap allows coarser cells in low-detail regions.
-				// -: Smaller cap limits coarse stretching.
+				// Units u: px.
+				// Domain D: >= minLenPx.
+				// Sensitivity (+): Larger cap allows coarser cells in low-detail regions.
+				// Sensitivity (-): Smaller cap limits coarse stretching.
 				maxLenPx: 14,
-				// Units: unitless width scale.
-				// Range: > 0.
-				// +: Larger floor keeps cells thicker at high detail.
-				// -: Smaller floor allows narrower cells.
+				// Units u: unitless width scale.
+				// Domain D: > 0.
+				// Sensitivity (+): Larger floor keeps cells thicker at high detail.
+				// Sensitivity (-): Smaller floor allows narrower cells.
 				minWidthScale: 0.72,
-				// Units: unitless width scale.
-				// Range: >= minWidthScale.
-				// +: Larger cap allows thicker/coarser cells.
-				// -: Smaller cap limits width growth.
+				// Units u: unitless width scale.
+				// Domain D: >= minWidthScale.
+				// Sensitivity (+): Larger cap allows thicker/coarser cells.
+				// Sensitivity (-): Smaller cap limits width growth.
 				maxWidthScale: 1.25,
-				// Units: radians.
-				// Range: > 0.
-				// +: Higher value reduces curvature sensitivity.
-				// -: Lower value increases curvature sensitivity.
+				// Units u: radians.
+				// Domain D: > 0.
+				// Sensitivity (+): Higher value reduces curvature sensitivity.
+				// Sensitivity (-): Lower value increases curvature sensitivity.
 				curvatureNormRad: 0.18,
-				// Units: px.
-				// Range: > 0.
-				// +: Higher value reduces slow-speed detail sensitivity.
-				// -: Lower value increases slow-speed detail sensitivity.
+				// Units u: px.
+				// Domain D: > 0.
+				// Sensitivity (+): Higher value reduces slow-speed detail sensitivity.
+				// Sensitivity (-): Lower value increases slow-speed detail sensitivity.
 				speedNormPx: 20,
-				// Units: unitless multiplier.
-				// Range: >= 1.
-				// +: Higher value coarsens cells more under low quality.
-				// -: Lower value preserves detail more under low quality.
+				// Units u: unitless multiplier.
+				// Domain D: >= 1.
+				// Sensitivity (+): Higher value coarsens cells more under low quality.
+				// Sensitivity (-): Lower value preserves detail more under low quality.
 				qualityCoarsenMax: 1.8,
-				// Units: unitless weight.
-				// Range: >= 0.
-				// +: Higher value increases curvature contribution to detail demand.
-				// -: Lower value decreases curvature contribution.
+				// Units u: unitless weight.
+				// Domain D: >= 0.
+				// Sensitivity (+): Higher value increases curvature contribution to detail demand.
+				// Sensitivity (-): Lower value decreases curvature contribution.
 				curvatureWeight: 0.55,
-				// Units: unitless weight.
-				// Range: >= 0.
-				// +: Higher value increases speed contribution to detail demand.
-				// -: Lower value decreases speed contribution.
+				// Units u: unitless weight.
+				// Domain D: >= 0.
+				// Sensitivity (+): Higher value increases speed contribution to detail demand.
+				// Sensitivity (-): Lower value decreases speed contribution.
 				speedWeight: 0.25,
-				// Units: unitless weight.
-				// Range: >= 0.
-				// +: Higher value increases near-head refinement bias.
-				// -: Lower value decreases head refinement bias.
+				// Units u: unitless weight.
+				// Domain D: >= 0.
+				// Sensitivity (+): Higher value increases near-head refinement bias.
+				// Sensitivity (-): Lower value decreases head refinement bias.
 				headWeight: 0.2,
-				// Units: unitless alpha.
-				// Range: [0, 1].
-				// +: Higher value reacts faster to target length changes.
-				// -: Lower value smooths length transitions more.
-				sizeLerpAlpha: 0.12,
-				// Units: unitless alpha.
-				// Range: [0, 1].
-				// +: Higher value reacts faster to width-scale changes.
-				// -: Lower value smooths width transitions more.
-				widthLerpAlpha: 0.1,
-				// Units: unitless alpha.
-				// Range: [0, 1].
-				// +: Higher value tracks per-cell direction changes more tightly.
-				// -: Lower value dampens direction jitter and smooths turns.
-				directionLerpAlpha: 0.3,
-				// Units: unitless alpha.
-				// Range: [0, 1].
-				// +: Higher value tracks target section endpoints more tightly.
-				// -: Lower value smooths endpoint transitions more aggressively.
-				handoffLerpAlpha: 0.45,
-				// Units: degrees.
-				// Range: >= 0.
-				// +: Higher tolerance allows more perpendicularity slack.
-				// -: Lower tolerance enforces stricter perpendicularity.
+				// Units u: unitless alpha.
+				// Domain D: [0, 1].
+				// Sensitivity (+): Higher value reacts faster to target length changes.
+				// Sensitivity (-): Lower value smooths length transitions more.
+				sizeLerpAlpha: 0.08,
+				// Units u: unitless alpha.
+				// Domain D: [0, 1].
+				// Sensitivity (+): Higher value reacts faster to width-scale changes.
+				// Sensitivity (-): Lower value smooths width transitions more.
+				widthLerpAlpha: 0.06,
+				// Units u: unitless alpha.
+				// Domain D: [0, 1].
+				// Sensitivity (+): Higher value tracks per-cell direction changes more tightly.
+				// Sensitivity (-): Lower value dampens direction jitter and smooths turns.
+				directionLerpAlpha: 0.18,
+				// Units u: unitless alpha.
+				// Domain D: [0, 1].
+				// Sensitivity (+): Higher value tracks target section endpoints more tightly.
+				// Sensitivity (-): Lower value smooths endpoint transitions more aggressively.
+				handoffLerpAlpha: 0.30,
+				// Units u: degrees.
+				// Domain D: >= 0.
+				// Sensitivity (+): Higher tolerance allows more perpendicularity slack.
+				// Sensitivity (-): Lower tolerance enforces stricter perpendicularity.
 				perpToleranceDeg: 4
 			}
 		},
 
+		// Quality adaptation equations:
+		// - frameEma <- lerp(frameEma, frameMs, emaAlpha)
+		// - hybridPressure = frameWeight * framePressure + distanceWeight * distancePressure
+		// - quality target = 1 - hybridPressure * (1 - qualityMin)
 		performance: {
-			// Units: Boolean flag.
-			// Range: true | false.
-			// +: true enables continuous adaptive quality based on frame pressure + move distance.
-			// -: false disables adaptive quality; always use full trail quality.
+			// Units u: Boolean flag.
+			// Domain D: true | false.
+			// Sensitivity (+): true enables continuous adaptive quality based on frame pressure + move distance.
+			// Sensitivity (-): false disables adaptive quality; always use full trail quality.
 			enabled: true,
 
-			// Units: ms.
-			// Range: > 0.
-			// +: Higher target tolerates slower frames before reducing quality.
-			// -: Lower target reacts earlier to frame-time pressure.
+			// Units u: ms.
+			// Domain D: > 0.
+			// Sensitivity (+): Higher target tolerates slower frames before reducing quality.
+			// Sensitivity (-): Lower target reacts earlier to frame-time pressure.
 			targetFrameMs: 16.7,
 
-			// Units: ms.
-			// Range: > 0.
-			// +: Wider window delays pressure ramp-up.
-			// -: Narrower window ramps pressure faster.
+			// Units u: ms.
+			// Domain D: > 0.
+			// Sensitivity (+): Wider window delays pressure ramp-up.
+			// Sensitivity (-): Narrower window ramps pressure faster.
 			framePressureWindowMs: 8.0,
 
-			// Units: unitless EMA alpha.
-			// Range: (0, 1].
-			// +: Higher value tracks frame spikes more aggressively.
-			// -: Lower value smooths frame pressure more.
+			// Units u: unitless EMA alpha.
+			// Domain D: (0, 1].
+			// Sensitivity (+): Higher value tracks frame spikes more aggressively.
+			// Sensitivity (-): Lower value smooths frame pressure more.
 			emaAlpha: 0.16,
 
-			// Units: px.
-			// Range: > 0.
-			// +: Larger normalization makes distance pressure less sensitive.
-			// -: Smaller normalization makes distance pressure more sensitive.
+			// Units u: px.
+			// Domain D: > 0.
+			// Sensitivity (+): Larger normalization makes distance pressure less sensitive.
+			// Sensitivity (-): Smaller normalization makes distance pressure more sensitive.
 			distanceNormPx: 120,
 
-			// Units: unitless weight.
-			// Range: >= 0.
-			// +: Increases influence of frame-time pressure on quality.
-			// -: Decreases influence of frame-time pressure.
+			// Units u: unitless weight.
+			// Domain D: >= 0.
+			// Sensitivity (+): Increases influence of frame-time pressure on quality.
+			// Sensitivity (-): Decreases influence of frame-time pressure.
 			frameWeight: 0.7,
 
-			// Units: unitless weight.
-			// Range: >= 0.
-			// +: Increases influence of move distance on quality.
-			// -: Decreases influence of move distance.
+			// Units u: unitless weight.
+			// Domain D: >= 0.
+			// Sensitivity (+): Increases influence of move distance on quality.
+			// Sensitivity (-): Decreases influence of move distance.
 			distanceWeight: 0.3,
 
-			// Units: unitless quality floor.
-			// Range: (0, 1].
-			// +: Higher floor preserves more visual quality under load.
-			// -: Lower floor allows stronger quality reduction for performance.
+			// Units u: unitless quality floor.
+			// Domain D: (0, 1].
+			// Sensitivity (+): Higher floor preserves more visual quality under load.
+			// Sensitivity (-): Lower floor allows stronger quality reduction for performance.
 			qualityMin: 0.38,
 
-			// Units: quality units per second.
-			// Range: >= 0.
-			// +: Drops quality faster when pressure increases.
-			// -: Drops quality more gradually.
+			// Units u: quality units per second.
+			// Domain D: >= 0.
+			// Sensitivity (+): Drops quality faster when pressure increases.
+			// Sensitivity (-): Drops quality more gradually.
 			degradeRatePerSec: 4.5,
 
-			// Units: quality units per second.
-			// Range: >= 0.
-			// +: Recovers quality faster when pressure subsides.
-			// -: Recovers quality more gradually.
+			// Units u: quality units per second.
+			// Domain D: >= 0.
+			// Sensitivity (+): Recovers quality faster when pressure subsides.
+			// Sensitivity (-): Recovers quality more gradually.
 			recoverRatePerSec: 1.6,
 
-			// Units: unitless threshold.
-			// Range: [0, 1].
-			// +: Keeps adaptation focused on subdivisions for longer.
-			// -: Allows blur/history adaptation to start earlier.
+			// Units u: unitless threshold.
+			// Domain D: [0, 1].
+			// Sensitivity (+): Keeps adaptation focused on subdivisions for longer.
+			// Sensitivity (-): Allows blur/history adaptation to start earlier.
 			subdivideOnlyThreshold: 0.68,
 
-			// Units: unitless threshold.
-			// Range: [0, 1].
-			// +: Delays blur attenuation to lower quality levels.
-			// -: Starts blur attenuation sooner.
+			// Units u: unitless threshold.
+			// Domain D: [0, 1].
+			// Sensitivity (+): Delays blur attenuation to lower quality levels.
+			// Sensitivity (-): Starts blur attenuation sooner.
 			blurStartThreshold: 0.66,
 
-			// Units: unitless threshold.
-			// Range: [0, 1].
-			// +: Delays history-length reduction to lower quality levels.
-			// -: Starts history-length reduction sooner.
+			// Units u: unitless threshold.
+			// Domain D: [0, 1].
+			// Sensitivity (+): Delays history-length reduction to lower quality levels.
+			// Sensitivity (-): Starts history-length reduction sooner.
 			historyStartThreshold: 0.50,
 
-			// Units: Boolean flag.
-			// Range: true | false.
-			// +: true adapts effective render cadence to quality/motion pressure.
-			// -: false draws every animation frame.
+			// Units u: Boolean flag.
+			// Domain D: true | false.
+			// Sensitivity (+): true adapts effective render cadence to quality/motion pressure.
+			// Sensitivity (-): false draws every animation frame.
 			adaptiveFpsEnabled: false,
 
-			// Units: frames per second.
-			// Range: > 0.
-			// +: Higher value keeps full-rate rendering under light pressure.
-			// -: Lower value reduces CPU/GPU load even when quality is high.
+			// Units u: frames per second.
+			// Domain D: > 0.
+			// Sensitivity (+): Higher value keeps full-rate rendering under light pressure.
+			// Sensitivity (-): Lower value reduces CPU/GPU load even when quality is high.
 			activeFps: 60,
 
-			// Units: frames per second.
-			// Range: > 0.
-			// +: Higher value preserves more temporal smoothness while degraded.
-			// -: Lower value saves more resources under moderate pressure.
+			// Units u: frames per second.
+			// Domain D: > 0.
+			// Sensitivity (+): Higher value preserves more temporal smoothness while degraded.
+			// Sensitivity (-): Lower value saves more resources under moderate pressure.
 			degradedFps: 45,
 
-			// Units: frames per second.
-			// Range: > 0.
-			// +: Higher value smooths heavy-load motion more.
-			// -: Lower value prioritizes responsiveness/stability under spikes.
+			// Units u: frames per second.
+			// Domain D: > 0.
+			// Sensitivity (+): Higher value smooths heavy-load motion more.
+			// Sensitivity (-): Lower value prioritizes responsiveness/stability under spikes.
 			heavyFps: 30,
 
-			// Units: frames per second.
-			// Range: > 0.
-			// +: Higher value refreshes idle/fading frames more frequently.
-			// -: Lower value minimizes idle render overhead.
+			// Units u: frames per second.
+			// Domain D: > 0.
+			// Sensitivity (+): Higher value refreshes idle/fading frames more frequently.
+			// Sensitivity (-): Lower value minimizes idle render overhead.
 			idleFps: 20,
 
-			// Units: unitless quality threshold.
-			// Range: [0, 1].
-			// +: Higher threshold enters degraded cadence sooner.
-			// -: Lower threshold keeps active cadence longer.
+			// Units u: unitless quality threshold.
+			// Domain D: [0, 1].
+			// Sensitivity (+): Higher threshold enters degraded cadence sooner.
+			// Sensitivity (-): Lower threshold keeps active cadence longer.
 			degradedFpsQuality: 0.82,
 
-			// Units: unitless quality threshold.
-			// Range: [0, 1].
-			// +: Higher threshold enters heavy cadence sooner.
-			// -: Lower threshold delays heavy cadence.
+			// Units u: unitless quality threshold.
+			// Domain D: [0, 1].
+			// Sensitivity (+): Higher threshold enters heavy cadence sooner.
+			// Sensitivity (-): Lower threshold delays heavy cadence.
 			heavyFpsQuality: 0.62,
 
-			// Units: ms.
-			// Range: >= 0.
-			// +: Higher value reduces expensive layout reads more aggressively.
-			// -: Lower value tracks layout changes more closely.
+			// Units u: ms.
+			// Domain D: >= 0.
+			// Sensitivity (+): Higher value reduces expensive layout reads more aggressively.
+			// Sensitivity (-): Lower value tracks layout changes more closely.
 			layoutPollIntervalMs: 120,
 
-			// Units: count (subdivisions per frame).
-			// Range: integer >= 1.
-			// +: Higher value allows more geometric refinement each frame.
-			// -: Lower value caps draw work harder during stress.
+			// Units u: count (subdivisions per frame).
+			// Domain D: integer >= 1.
+			// Sensitivity (+): Higher value allows more geometric refinement each frame.
+			// Sensitivity (-): Lower value caps draw work harder during stress.
 			maxSubdivisionsPerFrame: 120,
 
-			// Units: Boolean flag.
-			// Range: true | false.
-			// +: true uses a low-call ribbon strip renderer by default.
-			// -: false always uses the legacy per-edge quad path.
+			// Units u: Boolean flag.
+			// Domain D: true | false.
+			// Sensitivity (+): true uses a low-call ribbon strip renderer by default.
+			// Sensitivity (-): false always uses the legacy per-edge quad path.
 			fastPathEnabled: false,
 
-			// Units: Boolean flag.
-			// Range: true | false.
-			// +: true falls back to legacy rendering if fast-path validity checks fail.
-			// -: false skips invalid segments instead of drawing legacy fallback.
+			// Units u: Boolean flag.
+			// Domain D: true | false.
+			// Sensitivity (+): true falls back to legacy rendering if fast-path validity checks fail.
+			// Sensitivity (-): false skips invalid segments instead of drawing legacy fallback.
 			fastPathFallbackLegacy: true
 		},
 
 		// Base spring timing for corner motion.
+		// Equation use: omega_crit ~= 4 / length, with shortLength used for short hops.
 		animation: {
-			// Units: seconds.
-			// Range: > 0.
-			// +: Slower spring response with longer trailing lag.
-			// -: Faster spring response with tighter tracking.
+			// Units u: seconds.
+			// Domain D: > 0.
+			// Sensitivity (+): Slower spring response with longer trailing lag.
+			// Sensitivity (-): Faster spring response with tighter tracking.
 			length: 0.25,
-			// Units: seconds.
-			// Range: > 0.
-			// +: Slower response during short moves.
-			// -: Snappier response during short moves.
+			// Units u: seconds.
+			// Domain D: > 0.
+			// Sensitivity (+): Slower response during short moves.
+			// Sensitivity (-): Snappier response during short moves.
 			shortLength: 0.125,
-			// Units: px.
-			// Range: >= 0.
-			// +: More moves qualify as "shortLength" behavior.
-			// -: Fewer moves qualify as "shortLength" behavior.
+			// Units u: px.
+			// Domain D: >= 0.
+			// Sensitivity (+): More moves qualify as "shortLength" behavior.
+			// Sensitivity (-): Fewer moves qualify as "shortLength" behavior.
 			shortMoveThresholdPx: 32
 		},
 
 		// Corner-physics response shaping (lag, snap, and stretch clamping).
+		// Equation use:
+		// - tau_rank = baseTau * rankFactors[rank]
+		// - leading snap impulse ~= leadingSnapFactor * deltaDest
+		// - stretch clamp radius = maxTrailDistanceFactor * max(width, height)
 		dynamics: {
-			// Units: unitless multipliers [trailing, mid, mid, leading].
-			// Range: each entry > 0.
-			// +: Increasing an entry slows that rank's response.
-			// -: Decreasing an entry speeds that rank's response.
+			// Units u: unitless multipliers [trailing, mid, mid, leading].
+			// Domain D: each entry > 0.
+			// Sensitivity (+): Increasing an entry slows that rank's response.
+			// Sensitivity (-): Decreasing an entry speeds that rank's response.
 			rankFactors: [0.8, 0.4, 0.4, 0.2],
 
-			// Units: Boolean flag.
-			// Range: true | false.
-			// +: true enables leading-corner snap assist.
-			// -: false uses pure spring behavior without snap assist.
+			// Units u: Boolean flag.
+			// Domain D: true | false.
+			// Sensitivity (+): true enables leading-corner snap assist.
+			// Sensitivity (-): false uses pure spring behavior without snap assist.
 			hardSnap: false,
 
-			// Units: unitless fraction.
-			// Range: [0, 1].
-			// +: Stronger direct catch-up jump on leading corners.
-			// -: Weaker direct jump; more spring-driven motion.
+			// Units u: unitless fraction.
+			// Domain D: [0, 1].
+			// Sensitivity (+): Stronger direct catch-up jump on leading corners.
+			// Sensitivity (-): Weaker direct jump; more spring-driven motion.
 			leadingSnapFactor: 0.1,
 
-			// Units: unitless threshold.
-			// Range: [0, 1].
-			// +: Snap applies to fewer corners (more selective).
-			// -: Snap applies to more corners (less selective).
+			// Units u: unitless threshold.
+			// Domain D: [0, 1].
+			// Sensitivity (+): Snap applies to fewer corners (more selective).
+			// Sensitivity (-): Snap applies to more corners (less selective).
 			leadingSnapThreshold: 0.32,
 
-			// Units: seconds.
-			// Range: > 0.
-			// +: Reserved setting (currently no active runtime effect).
-			// -: Reserved setting (currently no active runtime effect).
+			// Units u: seconds.
+			// Domain D: > 0.
+			// Sensitivity (+): Reserved setting (currently no active runtime effect).
+			// Sensitivity (-): Reserved setting (currently no active runtime effect).
 			animationResetThresholdSec: 0.1,
 
-			// Units: unitless size multiplier.
-			// Range: > 0.
-			// +: Allows more corner stretch/deformation.
-			// -: Restricts stretch for tighter shape control.
+			// Units u: unitless size multiplier.
+			// Domain D: > 0.
+			// Sensitivity (+): Allows more corner stretch/deformation.
+			// Sensitivity (-): Restricts stretch for tighter shape control.
 			maxTrailDistanceFactor: 8,
 
-			// Units: seconds.
-			// Range: > 0.
-			// +: Slower settle during hard-snap mode.
-			// -: Sharper/faster settle during hard-snap mode.
+			// Units u: seconds.
+			// Domain D: > 0.
+			// Sensitivity (+): Slower settle during hard-snap mode.
+			// Sensitivity (-): Sharper/faster settle during hard-snap mode.
 			snapAnimationLength: 0.16
 		},
 
 		// Size-overshoot oscillator (separate from corner spring physics).
+		// Equation use:
+		// - x'' + 2*zeta*omega*x' + omega^2*x = 0
+		// - v <- v + clamp(dist * kickPerPx, 0, maxKick)
+		// - scaleExtra = clamp(x * gain, minScale, maxScale)
 		overshoot: {
-			// Units: Boolean flag.
-			// Range: true | false.
-			// +: true enables size overshoot bounce.
-			// -: false disables size overshoot bounce.
+			// Units u: Boolean flag.
+			// Domain D: true | false.
+			// Sensitivity (+): true enables size overshoot bounce.
+			// Sensitivity (-): false disables size overshoot bounce.
 			enabled: true,
 
-			// Units: oscillator-velocity units per px.
-			// Range: >= 0.
-			// +: Stronger bounce impulse from movement.
-			// -: Weaker bounce impulse from movement.
+			// Units u: oscillator-velocity units per px.
+			// Domain D: >= 0.
+			// Sensitivity (+): Stronger bounce impulse from movement.
+			// Sensitivity (-): Weaker bounce impulse from movement.
 			kickPerPx: 0.64,
 
-			// Units: oscillator-velocity units.
-			// Range: >= 0.
-			// +: Permits larger single-frame bounce kicks.
-			// -: Limits bounce kick strength.
+			// Units u: oscillator-velocity units.
+			// Domain D: >= 0.
+			// Sensitivity (+): Permits larger single-frame bounce kicks.
+			// Sensitivity (-): Limits bounce kick strength.
 			maxKick: 16.0,
 
-			// Units: rad/s.
-			// Range: > 0.
-			// +: Faster oscillation cycles.
-			// -: Slower oscillation cycles.
+			// Units u: rad/s.
+			// Domain D: > 0.
+			// Sensitivity (+): Faster oscillation cycles.
+			// Sensitivity (-): Slower oscillation cycles.
 			omega: 16,
 
-			// Units: unitless damping ratio.
-			// Range: >= 0 (typical [0, 1]).
-			// +: Less ringing and quicker settle.
-			// -: More ringing and longer bounce.
+			// Units u: unitless damping ratio.
+			// Domain D: >= 0 (typical [0, 1]).
+			// Sensitivity (+): Less ringing and quicker settle.
+			// Sensitivity (-): More ringing and longer bounce.
 			zeta: 0.16,
 
-			// Units: unitless gain.
-			// Range: >= 0.
-			// +: Larger visible scale expansion/contraction from same oscillator state.
-			// -: Smaller visible scale expansion/contraction.
+			// Units u: unitless gain.
+			// Domain D: >= 0.
+			// Sensitivity (+): Larger visible scale expansion/contraction from same oscillator state.
+			// Sensitivity (-): Smaller visible scale expansion/contraction.
 			gain: 0.64,
 
-			// Units: unitless scale delta.
-			// Range: <= maxScale.
-			// +: Raises lower bound (less inward shrink).
-			// -: Lowers lower bound (allows deeper inward shrink).
+			// Units u: unitless gain.
+			// Domain D: >= 0.
+			// Equation use: lenScale(frac) = envelope(frac) * (1 + scaleExtra * trailLenGain).
+			// Sensitivity (+): Amplifies along-direction overshoot on trail and head geometry.
+			// Sensitivity (-): Dampens along-direction overshoot response.
+			trailLenGain: 1.0,
+
+			// Units u: unitless gain.
+			// Domain D: >= 0.
+			// Equation use: widthScale(frac) = envelope(frac) * (1 + scaleExtra * trailWidthGain).
+			// Sensitivity (+): Amplifies cross-direction overshoot on trail and head geometry.
+			// Sensitivity (-): Dampens cross-direction overshoot response.
+			trailWidthGain: 0.35,
+
+			// Units u: unitless scale floor.
+			// Domain D: > 0.
+			// Equation use: lenScale,widthScale <- max(trailScaleFloor, computedScale).
+			// Sensitivity (+): Prevents negative/degenerate scale and stabilizes geometry under strong inward phases.
+			// Sensitivity (-): Allows deeper compression before clamp engages.
+			trailScaleFloor: 0.05,
+
+			// Units u: unitless scale delta.
+			// Domain D: <= maxScale.
+			// Sensitivity (+): Raises lower bound (less inward shrink).
+			// Sensitivity (-): Lowers lower bound (allows deeper inward shrink).
 			minScale: -0.04,
 
-			// Units: unitless scale delta.
-			// Range: >= minScale.
-			// +: Allows larger peak outward expansion.
-			// -: Limits outward expansion.
+			// Units u: unitless scale delta.
+			// Domain D: >= minScale.
+			// Sensitivity (+): Allows larger peak outward expansion.
+			// Sensitivity (-): Limits outward expansion.
 			maxScale: 0.32,
 
-			// Units: oscillator position units.
-			// Range: >= 0.
-			// +: Looser settle threshold; overshoot considered settled sooner.
-			// -: Stricter settle threshold; overshoot considered active longer.
+			// Units u: oscillator position units.
+			// Domain D: >= 0.
+			// Sensitivity (+): Looser settle threshold; overshoot considered settled sooner.
+			// Sensitivity (-): Stricter settle threshold; overshoot considered active longer.
 			settlePosEps: 0.32,
-			// Units: oscillator velocity units.
-			// Range: >= 0.
-			// +: Looser velocity settle threshold; settles sooner.
-			// -: Stricter velocity settle threshold; settles later.
+			// Units u: oscillator velocity units.
+			// Domain D: >= 0.
+			// Sensitivity (+): Looser velocity settle threshold; settles sooner.
+			// Sensitivity (-): Stricter velocity settle threshold; settles later.
 			settleVelEps: 0.32
 		},
 
+		// Idle/visibility thresholds used in draw gating.
 		idle: {
-			// Units: ms.
-			// Range: >= 0.
-			// +: Wait longer before entering low-motion shadow-off mode.
-			// -: Enter low-motion shadow-off mode sooner.
+			// Units u: ms.
+			// Domain D: >= 0.
+			// Sensitivity (+): Wait longer before entering low-motion shadow-off mode.
+			// Sensitivity (-): Enter low-motion shadow-off mode sooner.
 			switchDelayMs: 512,
 
-			// Units: px.
-			// Range: > 0.
-			// +: Thicker legacy fallback stroke for hollow box.
-			// -: Thinner legacy fallback stroke for hollow box.
+			// Units u: px.
+			// Domain D: > 0.
+			// Sensitivity (+): Thicker legacy fallback stroke for hollow box.
+			// Sensitivity (-): Thinner legacy fallback stroke for hollow box.
 			hollowLineWidthPx: 2
 		},
 
+		// Visibility hold equation: visible if hasCursor or (now - lastCursorSeenMs) <= noCursorHideDelayMs.
 		visibility: {
-			// Units: ms.
-			// Range: >= 0.
-			// +: Keep overlay visible longer while cursor is temporarily missing.
-			// -: Hide overlay sooner when cursor is missing.
+			// Units u: ms.
+			// Domain D: >= 0.
+			// Sensitivity (+): Keep overlay visible longer while cursor is temporarily missing.
+			// Sensitivity (-): Hide overlay sooner when cursor is missing.
 			noCursorHideDelayMs: 50
 		},
 
+		// Font-metric synthesis equations:
+		// - caretWidthPx = max(minCaretWidthPx, fontSizePx * caretWidthEm)
+		// - caretHeightPx = max(minLineHeightPx, resolvedLineHeightPx)
 		typography: {
-			// Units: em (relative to resolved font size).
-			// Range: > 0.
-			// +: Wider synthetic caret geometry.
-			// -: Narrower synthetic caret geometry.
+			// Units u: em (relative to resolved font size).
+			// Domain D: > 0.
+			// Sensitivity (+): Wider synthetic caret geometry.
+			// Sensitivity (-): Narrower synthetic caret geometry.
 			caretWidthEm: 1,
 
-			// Units: unitless multiplier.
-			// Range: > 0.
-			// +: Taller fallback synthetic caret height.
-			// -: Shorter fallback synthetic caret height.
+			// Units u: unitless multiplier.
+			// Domain D: > 0.
+			// Sensitivity (+): Taller fallback synthetic caret height.
+			// Sensitivity (-): Shorter fallback synthetic caret height.
 			lineHeightFallbackMultiplier: 1,
 
-			// Units: px.
-			// Range: >= 0.
-			// +: Raises minimum caret width floor.
-			// -: Lowers minimum caret width floor.
+			// Units u: px.
+			// Domain D: >= 0.
+			// Sensitivity (+): Raises minimum caret width floor.
+			// Sensitivity (-): Lowers minimum caret width floor.
 			minCaretWidthPx: 1,
 
-			// Units: px.
-			// Range: >= 0.
-			// +: Raises minimum line-height floor.
-			// -: Lowers minimum line-height floor.
+			// Units u: px.
+			// Domain D: >= 0.
+			// Sensitivity (+): Raises minimum line-height floor.
+			// Sensitivity (-): Lowers minimum line-height floor.
 			minLineHeightPx: 1,
 
-			// Units: px.
-			// Range: >= 0.
-			// +: Ignore more tiny metric fluctuations.
-			// -: Respond to smaller metric changes.
+			// Units u: px.
+			// Domain D: >= 0.
+			// Sensitivity (+): Ignore more tiny metric fluctuations.
+			// Sensitivity (-): Respond to smaller metric changes.
 			metricEpsilonPx: 1
 		},
 
+		// Motion gating equations:
+		// - center move if hypot(dx, dy) > centerMoveEpsilonPx
+		// - optional device-pixel quantization when snapCenterToDevicePixel = true
 		motion: {
-			// Units: px.
-			// Range: >= 0.
-			// +: Requires larger center movement before counting as real motion.
-			// -: Counts smaller center movement as real motion.
+			// Units u: px.
+			// Domain D: >= 0.
+			// Sensitivity (+): Requires larger center movement before counting as real motion.
+			// Sensitivity (-): Counts smaller center movement as real motion.
 			centerMoveEpsilonPx: 0.75,
 
-			// Units: px.
-			// Range: >= 0.
-			// +: Ignores more tiny width/height changes.
-			// -: Processes subtler width/height changes.
+			// Units u: px.
+			// Domain D: >= 0.
+			// Sensitivity (+): Ignores more tiny width/height changes.
+			// Sensitivity (-): Processes subtler width/height changes.
 			rectEpsilonPx: 1,
 
-			// Units: Boolean flag.
-			// Range: true | false.
-			// +: true snaps center to pixel grid, reducing subpixel jitter.
-			// -: false preserves raw subpixel center coordinates.
+			// Units u: Boolean flag.
+			// Domain D: true | false.
+			// Sensitivity (+): true snaps center to pixel grid, reducing subpixel jitter.
+			// Sensitivity (-): false preserves raw subpixel center coordinates.
 			snapCenterToDevicePixel: true
 		}
 	};
@@ -846,6 +953,15 @@
 
 	const rgbaCss = ({ r, g, b, a }) => `rgba(${r}, ${g}, ${b}, ${a / 255})`;
 	const TRAIL_WIDTH_ENVELOPE_AT = (frac) => 0.20 + 0.80 * (1 - frac);
+	const computeTrailOvershootScales = (frac, scaleExtra) => {
+		const envelope = TRAIL_WIDTH_ENVELOPE_AT(clamp(frac, 0, 1));
+		const floor = Math.max(1e-4, CFG.overshoot.trailScaleFloor || 0);
+		const lenGain = Math.max(0, CFG.overshoot.trailLenGain ?? 1);
+		const widthGain = Math.max(0, CFG.overshoot.trailWidthGain ?? 0.35);
+		const lenScale = Math.max(floor, envelope * (1 + scaleExtra * lenGain));
+		const widthScale = Math.max(floor, envelope * (1 + scaleExtra * widthGain));
+		return { lenScale, widthScale };
+	};
 	// Throttle expensive getComputedStyle font metric reads while keeping updates responsive.
 	const FONT_METRIC_CACHE_MS = 250;
 	// Cache resolved RGBA strings so hot-path draw avoids repeated hex parsing every frame.
@@ -1381,14 +1497,23 @@
 			}
 			return dst;
 		};
-		const scalePolygonInto = (dst, pts, cx, cy, scale) => {
+		const scalePolygonAnisotropicInto = (dst, pts, cx, cy, dirHint, lenScale, widthScale) => {
 			const n = pts?.length ?? 0;
 			ensurePolygonBufferLength(dst, n);
+			let u = pointNormalize(dirHint || { x: 1, y: 0 });
+			if (pointLen(u) < 1e-6) u = { x: 1, y: 0 };
+			const v = { x: -u.y, y: u.x };
+			const lenS = Math.max(1e-4, lenScale);
+			const widthS = Math.max(1e-4, widthScale);
 			for (let i = 0; i < n; i++) {
 				const dx = pts[i].x - cx;
 				const dy = pts[i].y - cy;
-				dst[i].x = cx + dx * scale;
-				dst[i].y = cy + dy * scale;
+				const along = dx * u.x + dy * u.y;
+				const across = dx * v.x + dy * v.y;
+				const sx = u.x * along * lenS + v.x * across * widthS;
+				const sy = u.y * along * lenS + v.y * across * widthS;
+				dst[i].x = cx + sx;
+				dst[i].y = cy + sy;
 			}
 			return dst;
 		};
@@ -1753,8 +1878,10 @@
 			bPts: [],
 			newestPts: [],
 			newestResampled: [],
+			headScaled: [],
 			edgeLensA: [],
 			edgeLensB: [],
+			lastTrailDir: { x: 1, y: 0 },
 			stackSizeState: {
 				valid: false,
 				len: 0,
@@ -1771,9 +1898,12 @@
 			effectiveDrawSubdivideStep,
 			effectiveMaxDrawSubdivisions,
 			effectiveRibbonSides,
-			remainingSubBudget
+			remainingSubBudget,
+			lastDirState
 		) => {
 			sections.length = 0;
+			let localDir = pointNormalize(lastDirState || { x: 1, y: 0 });
+			if (pointLen(localDir) < 1e-6) localDir = { x: 1, y: 0 };
 			for (let i = trailStartIndex; i < trail.length && remainingSubBudget > 0; i++) {
 				const prev = trail[i - 1];
 				const curr = trail[i];
@@ -1781,10 +1911,29 @@
 
 				const prevFrac = clamp((now - prev.t) / ttl, 0, 1);
 				const currFrac = clamp((now - curr.t) / ttl, 0, 1);
-				const prevScale = Math.max(0.05, (1 + scaleExtra) * TRAIL_WIDTH_ENVELOPE_AT(prevFrac));
-				const currScale = Math.max(0.05, (1 + scaleExtra) * TRAIL_WIDTH_ENVELOPE_AT(currFrac));
-				const prevPtsRaw = scalePolygonInto(drawScratch.prevPts, prev.pts, prev.cx, prev.cy, prevScale);
-				const currPtsRaw = scalePolygonInto(drawScratch.currPts, curr.pts, curr.cx, curr.cy, currScale);
+				const rawDir = { x: curr.cx - prev.cx, y: curr.cy - prev.cy };
+				const pairDir = pointNormalize(rawDir);
+				if (pointLen(pairDir) > 1e-6) localDir = pairDir;
+				const prevScale = computeTrailOvershootScales(prevFrac, scaleExtra);
+				const currScale = computeTrailOvershootScales(currFrac, scaleExtra);
+				const prevPtsRaw = scalePolygonAnisotropicInto(
+					drawScratch.prevPts,
+					prev.pts,
+					prev.cx,
+					prev.cy,
+					localDir,
+					prevScale.lenScale,
+					prevScale.widthScale
+				);
+				const currPtsRaw = scalePolygonAnisotropicInto(
+					drawScratch.currPts,
+					curr.pts,
+					curr.cx,
+					curr.cy,
+					localDir,
+					currScale.lenScale,
+					currScale.widthScale
+				);
 				const prevPts = resamplePolygonInto(
 					drawScratch.prevResampled,
 					prevPtsRaw,
@@ -1822,6 +1971,10 @@
 					const cB = polygonCenter(bPts);
 					sections.push({ pts: clonePolygon(bPts), cx: cB.x, cy: cB.y, frac: fracB });
 				}
+			}
+			if (lastDirState && pointLen(localDir) > 1e-6) {
+				lastDirState.x = localDir.x;
+				lastDirState.y = localDir.y;
 			}
 			return sections;
 		};
@@ -1871,28 +2024,42 @@
 				Math.round(Math.max(1, CFG.performance.maxSubdivisionsPerFrame || 1) * clampedQuality)
 			);
 			const sections = [];
-			buildTrailSections(
-				sections,
-				now,
-				ttl,
-				scaleExtra,
-				trailStartIndex,
-				effectiveDrawSubdivideStep,
-				effectiveMaxDrawSubdivisions,
-				effectiveRibbonSides,
-				remainingSubBudget
-			);
+				buildTrailSections(
+					sections,
+					now,
+					ttl,
+					scaleExtra,
+					trailStartIndex,
+					effectiveDrawSubdivideStep,
+					effectiveMaxDrawSubdivisions,
+					effectiveRibbonSides,
+					remainingSubBudget,
+					drawScratch.lastTrailDir
+				);
 			if (sections.length < 1 && trail.length) {
 				const newest = trail[trail.length - 1];
 				if (newest && newest.pts.length >= 3) {
 					const newestFrac = clamp((now - newest.t) / ttl, 0, 1);
-					const newestScale = Math.max(0.05, (1 + scaleExtra) * TRAIL_WIDTH_ENVELOPE_AT(newestFrac));
-					const newestPtsRaw = scalePolygonInto(
+					const newestScale = computeTrailOvershootScales(newestFrac, scaleExtra);
+					let newestDir = pointNormalize(drawScratch.lastTrailDir || { x: 1, y: 0 });
+					if (trail.length >= 2) {
+						const prevNewest = trail[trail.length - 2];
+						const rawNewestDir = pointNormalize({ x: newest.cx - prevNewest.cx, y: newest.cy - prevNewest.cy });
+						if (pointLen(rawNewestDir) > 1e-6) {
+							newestDir = rawNewestDir;
+							drawScratch.lastTrailDir.x = rawNewestDir.x;
+							drawScratch.lastTrailDir.y = rawNewestDir.y;
+						}
+					}
+					if (pointLen(newestDir) < 1e-6) newestDir = { x: 1, y: 0 };
+					const newestPtsRaw = scalePolygonAnisotropicInto(
 						drawScratch.newestPts,
 						newest.pts,
 						newest.cx,
 						newest.cy,
-						newestScale
+						newestDir,
+						newestScale.lenScale,
+						newestScale.widthScale
 					);
 					const newestPts = resamplePolygonInto(
 						drawScratch.newestResampled,
@@ -1919,6 +2086,27 @@
 					headPoly,
 					effectiveRibbonSides,
 					drawScratch.edgeLensA
+				);
+				const headScale = computeTrailOvershootScales(0, scaleExtra);
+				let headDir = { x: 1, y: 0 };
+				if (sections.length >= 2) {
+					const tailA = sections[sections.length - 2];
+					const tailB = sections[sections.length - 1];
+					const sectionDir = pointNormalize({ x: tailB.cx - tailA.cx, y: tailB.cy - tailA.cy });
+					if (pointLen(sectionDir) > 1e-6) headDir = sectionDir;
+				} else {
+					const cachedDir = pointNormalize(drawScratch.lastTrailDir || { x: 1, y: 0 });
+					if (pointLen(cachedDir) > 1e-6) headDir = cachedDir;
+				}
+				const headCenterPreScale = polygonCenter(headPts);
+				headPts = scalePolygonAnisotropicInto(
+					drawScratch.headScaled,
+					headPts,
+					headCenterPreScale.x,
+					headCenterPreScale.y,
+					headDir,
+					headScale.lenScale,
+					headScale.widthScale
 				);
 				if (sections.length > 0 && sections[sections.length - 1].pts.length === headPts.length) {
 					headPts = canonicalizePolygon(headPts, sections[sections.length - 1].pts);
@@ -1994,6 +2182,10 @@
 			let smoothWidth = dyn.valid ? dyn.widthScale : 1;
 			let drewAny = false;
 			const renderedCells = [];
+			let prevWidthEma = null;
+			let prevDeltaWidth = null;
+			let turnCooldown = 0;
+			let prevActiveShare = clamp(cfg.partialEdgeShare, 0, 1);
 
 			for (let ci = 0; ci < picked.length - 1; ci++) {
 				const s0 = sections[picked[ci]];
@@ -2066,33 +2258,73 @@
 					cfg.minCellWidthPx,
 					sectionWidth * Math.max(1, cfg.maxWidthScale || 1)
 				);
+				const cellWidth = handoffWidth;
+				const widthEmaAlpha = clamp(cfg.turnWidthEmaAlpha ?? 0.35, 0, 1);
+				const widthEma = prevWidthEma == null ? cellWidth : lerp(prevWidthEma, cellWidth, widthEmaAlpha);
+				const deltaWidth = prevWidthEma == null ? 0 : widthEma - prevWidthEma;
+				const epsAbs = Math.max(1e-4, cfg.turnDetectEpsilonPx || 0);
+				const epsRel = Math.max(0, cfg.turnDetectEpsilonRatio || 0) * Math.max(cfg.minCellWidthPx, sectionWidth);
+				const turnDetectEps = Math.max(epsAbs, epsRel);
+				const turnScope = cfg.turnScope === "both" ? "both" : "grow_to_shrink";
+				const hasPrevDelta = prevDeltaWidth != null;
+				const minTurnDelta = Math.max(0, cfg.turnMinDeltaPx || 0);
+				const deltaMagOk = hasPrevDelta && Math.abs(prevDeltaWidth) >= minTurnDelta && Math.abs(deltaWidth) >= minTurnDelta;
+				const isGrowToShrinkTurn = hasPrevDelta && prevDeltaWidth > turnDetectEps && deltaWidth < -turnDetectEps;
+				const isShrinkToGrowTurn = hasPrevDelta && prevDeltaWidth < -turnDetectEps && deltaWidth > turnDetectEps;
+				const turnCandidate =
+					!!cfg.turnOnlyFullSideEnabled &&
+					deltaMagOk &&
+					(isGrowToShrinkTurn || (turnScope === "both" && isShrinkToGrowTurn));
+				const isTurnCell = turnCandidate && turnCooldown <= 0;
+				if (isTurnCell) {
+					turnCooldown = Math.max(0, Math.round(cfg.turnCooldownCells || 0));
+				} else if (turnCooldown > 0) {
+					turnCooldown--;
+				}
 				const halfW = handoffWidth * 0.5;
 				const handoffBlend = clamp(cfg.handoffLerpAlpha ?? 1, 0.05, 1);
 				const handoffLTarget = pointAdd(handoffCenter, pointScale(N, -halfW));
 				const handoffRTarget = pointAdd(handoffCenter, pointScale(N, halfW));
 				const handoffL = lerpPoint(baseL, handoffLTarget, handoffBlend);
 				const handoffR = lerpPoint(baseR, handoffRTarget, handoffBlend);
-				let partR = lerpPoint(baseR, handoffR, clamp(cfg.partialEdgeShare, 0, 1));
-				let partL = lerpPoint(baseL, handoffL, clamp(cfg.partialEdgeShare, 0, 1));
 				const concavitySign = cfg.concavityDirection === "backward" ? -1 : 1;
 				const concavityDepth = Math.max(0, cfg.concavityDepth || 0);
 				const concavityTarget = pointAdd(baseMid, pointScale(D, concavitySign * smoothLen * concavityDepth));
-				// Zero concavity means no deformation; clamping with step=0 would collapse both points.
-				if (concavityDepth > 1e-6) {
-					const concavityStep = concavityDepth * handoffWidth;
-					partR = clampPointStep(partR, concavityTarget, concavityStep);
-					partL = clampPointStep(partL, concavityTarget, concavityStep);
-				}
+				const normalShare = clamp(cfg.partialEdgeShare, 0, 1);
+				const turnShare = clamp(cfg.turnPartialEdgeShare ?? 0, 0, 1);
+				const activeShareRaw = isTurnCell ? turnShare : normalShare;
+				const shareLerpAlpha = clamp(cfg.turnShareLerpAlpha ?? 1, 0, 1);
+				const activeShare = lerp(prevActiveShare, activeShareRaw, shareLerpAlpha);
+				const buildCellPts = (share, turnCell) => {
+					let partR = lerpPoint(baseR, handoffR, share);
+					let partL = lerpPoint(baseL, handoffL, share);
+					// Zero concavity means no deformation; clamping with step=0 would collapse both points.
+					if (concavityDepth > 1e-6) {
+						const turnConcavityScale = turnCell ? clamp(cfg.turnConcavityScale ?? 1, 0, 1) : 1;
+						const concavityStep = concavityDepth * handoffWidth * turnConcavityScale;
+						partR = clampPointStep(partR, concavityTarget, concavityStep);
+						partL = clampPointStep(partL, concavityTarget, concavityStep);
+					}
+					return [
+						clonePoint(baseL),
+						clonePoint(baseR),
+						clonePoint(partR),
+						clonePoint(handoffR),
+						clonePoint(handoffL),
+						clonePoint(partL)
+					];
+				};
 
-				const cellPts = [
-					clonePoint(baseL),
-					clonePoint(baseR),
-					clonePoint(partR),
-					clonePoint(handoffR),
-					clonePoint(handoffL),
-					clonePoint(partL)
-				];
+				let cellPts = buildCellPts(activeShare, isTurnCell);
 				let valid = isValidTrailPolygon(cellPts);
+				if (!valid && isTurnCell) {
+					// Turn-only share can degenerate on sharp peaks; retry once with normal share.
+					const retryCellPts = buildCellPts(normalShare, false);
+					if (isValidTrailPolygon(retryCellPts)) {
+						cellPts = retryCellPts;
+						valid = true;
+					}
+				}
 				if (valid && cfg.overlapGuardEnabled && renderedCells.length > 1) {
 					const lookback = Math.max(2, Math.round(cfg.overlapLookbackCells || 2));
 					const startIdx = Math.max(0, renderedCells.length - lookback);
@@ -2122,6 +2354,9 @@
 				baseL = clonePoint(handoffL);
 				baseR = clonePoint(handoffR);
 				prevD = D;
+				prevDeltaWidth = deltaWidth;
+				prevWidthEma = widthEma;
+				prevActiveShare = activeShare;
 			}
 
 			if (headPts && isValidTrailPolygon(headPts)) {
